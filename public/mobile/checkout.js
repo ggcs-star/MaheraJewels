@@ -2,43 +2,49 @@ const API_BASE_URL = window.API_BASE_URL;
 let PAYMENT_IN_PROGRESS = false;
 let PAYMENT_COMPLETED = false;
 
+// ========== CHECKOUT PAGE - FIXED ==========
 document.addEventListener('DOMContentLoaded', function () {
     const token = localStorage.getItem('token');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
 
     if (!token || !user.id) {
-    sessionStorage.setItem('redirect_after_login', '/checkout/shipping');
-    if (typeof showLoginPopup === 'function') {
-        showLoginPopup();
-    } else {
-        window.location.href = '/login';
+        sessionStorage.setItem('redirect_after_login', '/checkout/shipping');
+        if (typeof showLoginPopup === 'function') {
+            showLoginPopup();
+        } else {
+            window.location.href = '/login';
+        }
+        return;
     }
-    return;
-}
 
+    // ✅ FIX: Preserve category_id from buy_now_product
     const buyNowProduct = sessionStorage.getItem('buy_now_product');
 
-if (buyNowProduct) {
-    const product = JSON.parse(buyNowProduct);
-    const cart = [{
-        id: product.product_id,
-        variantId: product.variant_id,
-        quantity: 1,
-        price: product.price,
-        name: product.name,
-        image: product.image
-    }];
-    localStorage.setItem('cart', JSON.stringify(cart));
-    sessionStorage.removeItem('buy_now_product');
-}
+    if (buyNowProduct) {
+        const product = JSON.parse(buyNowProduct);
+        const cart = [{
+            id: product.product_id,
+            variantId: product.variant_id,
+            quantity: 1,
+            price: product.price,
+            name: product.name,
+            image: product.image,
+            categoryId: product.category_id,        // ✅ ADDED
+            subcategoryId: product.subcategory_id,  // ✅ ADDED
+            brand: product.brand || '',
+            slug: product.slug || ''
+        }];
+        localStorage.setItem('cart', JSON.stringify(cart));
+        sessionStorage.removeItem('buy_now_product');
+    }
 
-const cartItems = JSON.parse(localStorage.getItem('cart')) || [];
+    const cartItems = JSON.parse(localStorage.getItem('cart')) || [];
 
-if (cartItems.length === 0) {
-    alert('Your cart is empty. Please add items to continue.');
-    window.location.href = '/';
-    return;
-}
+    if (cartItems.length === 0) {
+        alert('Your cart is empty. Please add items to continue.');
+        window.location.href = '/';
+        return;
+    }
 
     syncCartWithServer().then(() => {
         loadCheckoutSummary();
@@ -48,6 +54,7 @@ if (cartItems.length === 0) {
     
 });
 
+// ========== SYNC CART WITH SERVER - FIXED ==========
 async function syncCartWithServer() {
     const token = localStorage.getItem('token');
     const localCart = JSON.parse(localStorage.getItem('cart')) || [];
@@ -84,12 +91,17 @@ async function syncCartWithServer() {
                 variantId = item.id;
             }
             
+            // ✅ FIX: Include category_id in payload
             const payload = {
                 product_id: item.id,
                 variant_id: variantId,
                 quantity: item.quantity,
-                price: Number(item.price) || Number(item.product_price) || 0
+                price: Number(item.price) || Number(item.product_price) || 0,
+                category_id: item.categoryId || item.category_id || null,  // ✅ ADDED
+                subcategory_id: item.subcategoryId || item.subcategory_id || null  // ✅ ADDED
             };
+            
+            console.log('Syncing item with category:', payload);
             
             const addRes = await fetch(`${API_BASE_URL}/cart/add`, {
                 method: 'POST',
@@ -1104,6 +1116,7 @@ function renderCheckoutCoupons(coupons) {
     list.innerHTML = html;
 }
 
+// ========== APPLY COUPON - FIXED ==========
 function applyCheckoutCoupon(couponCode = null) {
     const input = document.getElementById('checkoutCouponInput');
     const code = couponCode || input?.value?.trim()?.toUpperCase();
@@ -1125,7 +1138,7 @@ function applyCheckoutCoupon(couponCode = null) {
     const totalMatch = summaryContainer?.innerHTML?.match(/₹([\d.]+)/);
     const cartTotal = totalMatch ? parseFloat(totalMatch[1]) : 0;
     
-    // Get cart items
+    // Get cart items with proper category data
     const cart = JSON.parse(localStorage.getItem('cart')) || [];
     if (!cart.length) {
         showToast('Cart is empty', 'error');
@@ -1133,6 +1146,22 @@ function applyCheckoutCoupon(couponCode = null) {
     }
     
     const firstItem = cart[0];
+    
+    // ✅ FIX: Get category_id from cart item, with fallback to fetch from server
+    let categoryId = firstItem.categoryId || firstItem.category_id || null;
+    let subcategoryId = firstItem.subcategoryId || firstItem.subcategory_id || null;
+    
+    // ✅ FIX: If categoryId is still null, try to fetch from server
+    if (!categoryId) {
+        // Try to get from product data
+        const productId = firstItem.id;
+        // For Buy Now, it should already be in the cart item
+        // If not, we'll use a fallback
+        console.warn('Category ID missing for product:', productId);
+        // Show error to user
+        showToast('Product category not found. Please try again.', 'error');
+        return;
+    }
     
     // Show loading
     const applyBtn = document.querySelector('.apply-coupon-btn');
@@ -1142,6 +1171,22 @@ function applyCheckoutCoupon(couponCode = null) {
         applyBtn.disabled = true;
     }
     
+    // ✅ FIX: Include bank_id and card_type if available
+    const bankId = document.getElementById('bank-select')?.value || null;
+    const cardType = document.querySelector('input[name="card_type"]:checked')?.value || null;
+    
+    const requestData = {
+        coupon_code: code,
+        cart_total: cartTotal,
+        product_id: firstItem.id,
+        category_id: categoryId,
+        subcategory_id: subcategoryId || null,
+        bank_id: bankId,
+        card_type: cardType
+    };
+    
+    console.log('Applying coupon with data:', requestData);
+    
     fetch(`${API_BASE_URL}/coupons/apply`, {
         method: 'POST',
         headers: {
@@ -1149,13 +1194,7 @@ function applyCheckoutCoupon(couponCode = null) {
             'Accept': 'application/json',
             'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({
-            coupon_code: code,
-            cart_total: cartTotal,
-            product_id: firstItem.id,
-            category_id: firstItem.categoryId,
-            subcategory_id: firstItem.subcategoryId || null
-        })
+        body: JSON.stringify(requestData)
     })
     .then(res => res.json())
     .then(response => {

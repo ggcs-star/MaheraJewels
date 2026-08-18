@@ -682,10 +682,9 @@ console.log({
 body: JSON.stringify({
     coupon_code: code.toUpperCase(),
     cart_total: cartTotal,
-
     product_id: firstItem.id,
     category_id: firstItem.categoryId,
-    subcategory_id: firstItem.categoryId
+    subcategory_id: firstItem.subcategoryId || null  // ✅ FIXED
 })
     })
     .then(res => res.json())

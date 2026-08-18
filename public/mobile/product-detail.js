@@ -755,7 +755,8 @@ const API_BASE_URL = window.API_BASE_URL;
     window.nextReview = function() { currentReviewIndex = (currentReviewIndex + 1) % allReviews.length; renderCurrentReview(); }
     window.prevReview = function() { currentReviewIndex = (currentReviewIndex - 1 + allReviews.length) % allReviews.length; renderCurrentReview(); }
     
-    window.buyNow = function() {
+    // ========== BUY NOW - FIXED ==========
+window.buyNow = function() {
     const token = localStorage.getItem('token');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     if (!token || !user.id) { 
@@ -789,7 +790,7 @@ const API_BASE_URL = window.API_BASE_URL;
     
     const activeBtn = document.querySelector('.pdp-size-btn.active');
     let selectedVariant = null;
-    let variantValue = null;  // ✅ ADD
+    let variantValue = null;
     
     if (currentProduct?.variants && currentProduct.variants.length > 0) {
         if (activeBtn) {
@@ -799,7 +800,7 @@ const API_BASE_URL = window.API_BASE_URL;
             selectedVariant = currentProduct.variants[0];
         }
         if (selectedVariant) {
-            variantValue = selectedVariant.variant_value || selectedVariant.value;  // ✅ ADD
+            variantValue = selectedVariant.variant_value || selectedVariant.value;
         }
     }
     
@@ -817,6 +818,10 @@ const API_BASE_URL = window.API_BASE_URL;
     else if (currentProduct?.image_url) imageUrl = currentProduct.image_url;
     else if (currentProduct?.gallery_images && currentProduct.gallery_images.length) imageUrl = currentProduct.gallery_images[0];
     
+    // ✅ FIX: Use currentProduct, not product
+    const categoryId = currentProduct?.category?.id || null;
+    const subcategoryId = currentProduct?.subcategory?.id || currentProduct?.category?.parent_id || null;
+    
     const cartItem = {
         id: currentProduct?.id,
         name: currentProduct?.name,
@@ -826,20 +831,26 @@ const API_BASE_URL = window.API_BASE_URL;
         image: imageUrl,
         slug: currentProduct?.slug,
         variantId: selectedVariant?.id || null,
-        variantValue: variantValue || '',  // ✅ ADD
+        variantValue: variantValue || '',
         quantity: 1,
-        categoryId: currentProduct?.category?.id || null
+        categoryId: categoryId,
+        subcategoryId: subcategoryId
     };
     
     localStorage.setItem('cart', JSON.stringify([cartItem]));
     
+    // ✅ FIX: Save complete data with category_id
     sessionStorage.setItem('buy_now_product', JSON.stringify({
         product_id: currentProduct?.id,
         variant_id: selectedVariant?.id || null,
         price: finalPrice,
         name: currentProduct?.name,
+        category_id: categoryId,
+        subcategory_id: subcategoryId,
         image: imageUrl,
-        variant_value: variantValue || ''  // ✅ ADD
+        variant_value: variantValue || '',
+        brand: currentProduct?.brand || '',
+        slug: currentProduct?.slug
     }));
     
     updateCartBadge();
