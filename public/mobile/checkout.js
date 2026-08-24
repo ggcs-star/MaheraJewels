@@ -682,15 +682,13 @@ function placeOrder() {
 }
 
 function getSelectedPaymentMethod() {
-    const paymentRadios = document.querySelectorAll('input[name="payment_method"]');
-    
-    if (paymentRadios.length > 0) {
-        const selected = document.querySelector('input[name="payment_method"]:checked');
-        if (!selected) return null;
-        return selected.value === 'cod' ? 1 : 2;
+    const selected = document.querySelector('input[name="payment_method"]:checked');
+
+    if (!selected) {
+        return 2;
     }
-    
-    return 1;
+
+    return 2;
 }
 
 function handleCheckout() {

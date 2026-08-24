@@ -104,12 +104,12 @@
                    <div class="checkout-section payment-methods-section">
                     <h2>2. Payment Method</h2>
                     <div class="payment-options">
-                        <label class="payment-option">
+                        <!-- <label class="payment-option">
                             <input type="radio" name="payment_method" value="cod" checked>
                             <span>Cash on Delivery</span>
-                        </label>
+                        </label> -->
                         <label class="payment-option">
-                            <input type="radio" name="payment_method" value="razorpay">
+                            <input type="radio" name="payment_method" value="razorpay" checked>
                             <span>Pay Online (Razorpay)</span>
                         </label>
                     </div>
