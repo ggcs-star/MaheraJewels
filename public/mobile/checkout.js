@@ -101,7 +101,7 @@ async function syncCartWithServer() {
                 subcategory_id: item.subcategoryId || item.subcategory_id || null  // ✅ ADDED
             };
             
-            console.log('Syncing item with category:', payload);
+            // console.log('Syncing item with category:', payload);
             
             const addRes = await fetch(`${API_BASE_URL}/cart/add`, {
                 method: 'POST',
@@ -138,7 +138,7 @@ function loadCheckoutSummary() {
         url += `?coupon_code=${encodeURIComponent(couponCode)}`;
     }
     
-    console.log('Fetching summary from:', url);
+    // console.log('Fetching summary from:', url);
     
     fetch(url, {
         headers: {
@@ -148,12 +148,11 @@ function loadCheckoutSummary() {
     })
     .then(res => res.json())
     .then(response => {
-        console.log('Full checkout summary response:', response);
+        // console.log('Full checkout summary response:', response);
         
         if (response.success && response.data && response.data.cart) {
             renderCheckoutSummary(response.data.cart);
             
-            // ✅ Check if coupon applied from server response
             if (response.data.cart.discount > 0) {
                 const appliedCode = localStorage.getItem('applied_coupon');
                 if (appliedCode) {

@@ -857,24 +857,107 @@ window.buyNow = function() {
     window.location.href = '/checkout/shipping';
 }
         
+    function getProductPageCache(key, maxAge = 5 * 60 * 1000) {
+        try {
+            const raw = sessionStorage.getItem(key);
+            if (!raw) return null;
+            const cached = JSON.parse(raw);
+            if (!cached || !cached.timestamp || (Date.now() - cached.timestamp) > maxAge) {
+                sessionStorage.removeItem(key);
+                return null;
+            }
+            return cached.data || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function setProductPageCache(key, data) {
+        try {
+            sessionStorage.setItem(key, JSON.stringify({
+                timestamp: Date.now(),
+                data: data
+            }));
+        } catch (e) {}
+    }
+
     async function fetchProduct() {
         if (document.body.classList.contains('category-products-page')) return;
+
         const pathParts = window.location.pathname.split('/');
         const slug = pathParts[pathParts.length - 1];
+        if (!slug) return;
+
+        const cacheKey = `mahera_product_${slug}`;
+
+        const cachedProduct = getProductPageCache(cacheKey);
+
+        if (cachedProduct) {
+            currentProduct = cachedProduct;
+            window.currentProduct = cachedProduct;
+
+            try {
+                renderProduct(cachedProduct);
+                startImageAutoScroll();
+                return;
+            } catch (renderError) {
+                console.error('Cached product render error:', renderError);
+
+                // Bad cache remove karo
+                sessionStorage.removeItem(cacheKey);
+
+                // IMPORTANT:
+                // yahan return nahi hoga
+                // neeche fresh API call chalegi
+            }
+        }
+
         try {
-            const response = await fetch(`${API_BASE_URL}/products/${slug}`);
+            const response = await fetch(`${API_BASE_URL}/products/${slug}`, {
+                cache: 'no-store'
+            });
+
+            if (!response.ok) {
+                throw new Error(`Product API failed: ${response.status}`);
+            }
+
             const data = await response.json();
+
             if (data.success && data.data) {
                 currentProduct = data.data;
                 window.currentProduct = data.data;
-                await fetchBrandFromCategory();
-                await Promise.all([fetchCoupons(), fetchReviews()]);
+
                 renderProduct(data.data);
                 startImageAutoScroll();
-            } else showError('Product not found');
-        } catch (error) { console.error('Error:', error); showError('Failed to load product'); }
+
+                setProductPageCache(cacheKey, data.data);
+                Promise.allSettled([
+                    fetchBrandFromCategory(),
+                    fetchCoupons(),
+                    fetchReviews()
+                ]).then(() => {
+                    try {
+                        renderOffers();
+                        renderCurrentReview();
+                    } catch (backgroundRenderError) {
+                        console.error(
+                            'Background product update error:',
+                            backgroundRenderError
+                        );
+                    }
+                });
+            }
+
+        } catch (error) {
+            console.error('Product API error:', error);
+
+            if (cachedProduct) {
+                currentProduct = cachedProduct;
+                window.currentProduct = cachedProduct;
+            }
+        }
     }
-    
+
     async function fetchBrandFromCategory() {
         if (!currentProduct?.category?.id) return;
         try {
@@ -943,9 +1026,19 @@ window.buyNow = function() {
     
     async function fetchAppSettingsForProductPage() {
     try {
-        const response = await fetch(`${API_BASE_URL}/app-settings`);
-        const data = await response.json();
-        if (data.success) {
+        const cacheKey = 'mahera_product_app_settings';
+        let data = getProductPageCache(cacheKey, 10 * 60 * 1000);
+
+        if (!data) {
+            const response = await fetch(`${API_BASE_URL}/app-settings`, { cache: 'no-store' });
+            const freshResponse = await response.json();
+            if (freshResponse.success) {
+                data = freshResponse;
+                setProductPageCache(cacheKey, freshResponse);
+            }
+        }
+
+        if (data && data.success) {
             const headerLogo = data.data.header_logo || data.data.app_logo;
             
             const desktopLogoImg = document.getElementById('site-logo');
@@ -976,7 +1069,19 @@ window.buyNow = function() {
         const navMenu = document.getElementById('productDesktopNavMenu');
         const popup = document.getElementById('productDesktopPopup');
         if (!navMenu) return;
-        fetch(`${API_BASE_URL}/categories`).then(res => res.json()).then(data => {
+        const cacheKey = 'mahera_product_categories';
+        const cachedCategories = getProductPageCache(cacheKey, 5 * 60 * 1000);
+
+        const categoriesRequest = cachedCategories
+            ? Promise.resolve(cachedCategories)
+            : fetch(`${API_BASE_URL}/categories`, { cache: 'no-store' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.success) setProductPageCache(cacheKey, data);
+                    return data;
+                });
+
+        categoriesRequest.then(data => {
             if (data.success) {
                 const categories = data.data.slice(0, 5);
                 navMenu.innerHTML = categories.map(cat => {
@@ -1053,7 +1158,18 @@ html += `<li style="margin-bottom:8px;"><a href="/collection/${subSlug}" style="
         
     function renderProduct(product) {
         const container = document.getElementById('product-container');
-        const galleryImages = product.gallery_images || [];
+
+        if (!container) {
+            throw new Error('Product container not found');
+        }
+
+        if (!product || typeof product !== 'object') {
+            throw new Error('Invalid product data');
+        }
+
+        const galleryImages = Array.isArray(product.gallery_images)
+            ? product.gallery_images
+            : [];
         currentImages = galleryImages.length ? galleryImages : (product.image_url ? [product.image_url] : []);
         if (!currentImages.length) currentImages = ['https://via.placeholder.com/400x600?text=No+Image'];
         
@@ -1108,7 +1224,7 @@ let discountPercentage = originalPrice > displayPrice ? Math.round(((originalPri
         if (product.fit) descriptionPoints.push(`Fit: ${product.fit}`);
         if (product.fabric) descriptionPoints.push(`Fabric: ${product.fabric}`);
         if (!descriptionPoints.length && product.description) {
-            product.description.split('\n').forEach(line => {
+            String(product.description).split('\n').forEach(line => {
                 const cleanLine = line.replace(/^[•\s]*/, '').trim();
                 if (cleanLine) descriptionPoints.push(cleanLine);
             });
@@ -1215,7 +1331,7 @@ let discountPercentage = originalPrice > displayPrice ? Math.round(((originalPri
         updateCartBadge();
         fetchProduct();
         fetchAppSettingsForProductPage();
-        setTimeout(() => loadProductDesktopCategories(), 500);
+        loadProductDesktopCategories();
     });
 })();
 

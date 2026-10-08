@@ -163,7 +163,7 @@
 
 <script>
     window.RAZORPAY_KEY_ID = "{{ config('services.razorpay.key') }}";
-    console.log('Frontend Razorpay key:', window.RAZORPAY_KEY_ID);
+    // console.log('Frontend Razorpay key:', window.RAZORPAY_KEY_ID);
 </script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>

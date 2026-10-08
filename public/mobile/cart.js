@@ -286,10 +286,10 @@ function renderCart(items) {
 
 function loadCart() {
     let cart = getCart();
-    console.log('📦 Cart from localStorage:', cart.length);
+    // console.log('📦 Cart from localStorage:', cart.length);
     
     cart.forEach((item, idx) => {
-        console.log(`Item ${idx}: ${item.name} - Price: ${item.price}, MRP: ${item.mrp}, Variant: ${item.variantValue}`);
+        // console.log(`Item ${idx}: ${item.name} - Price: ${item.price}, MRP: ${item.mrp}, Variant: ${item.variantValue}`);
     });
 
     fetchBrandsForCartItems(cart).then(updatedCart => {
