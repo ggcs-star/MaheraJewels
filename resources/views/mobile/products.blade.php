@@ -2913,7 +2913,9 @@ async function fetchBestSellerProducts() {
             const title = section.querySelector('.desktop-filter-title');
             const options = section.querySelector('.filter-options');
             if (title && options) {
-                options.classList.remove('open');
+                section.classList.add('open');
+                options.classList.add('open');
+
                 title.addEventListener('click', function(e) {
                     e.preventDefault();
                     section.classList.toggle('open');
