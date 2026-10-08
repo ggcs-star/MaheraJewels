@@ -7,7 +7,7 @@
       <meta name="keywords" content="jewellery, necklaces, earrings, bridal sets, maang tikka, bangles, kundan jewellery, pearl jewellery">
        <meta name="author" content="MAHERA JEWEL">
         <title>MAHERA JEWEL </title>
-  <link rel="icon" type="image/jpeg" href="{{ asset('images/mjlogo.jpeg') }}">
+     <link rel="icon" type="image/jpeg" href="{{ asset('images/mjlogo.jpeg') }}">
     <link rel="stylesheet" href="{{ asset('mobile/style.css') }}">
     <link rel="stylesheet" href="{{ asset('mobile/categories/category-styles.css') }}">
     <link rel="stylesheet" href="{{ asset('mobile/product-styles.css') }}">

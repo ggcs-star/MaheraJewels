@@ -14,7 +14,7 @@
     
     <main class="profile-content">
         <div class="profile-container" id="profile-container">
-            <div class="loading-spinner">Loading profile...</div>
+            
         </div>
     </main>
     

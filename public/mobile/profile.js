@@ -25,7 +25,7 @@ function initializeProfile() {
     if (token) {
         validateAndLoadUserProfile();
     } else {
-        renderGuestProfile();
+        showLoginPopup();
     }
 }
 
@@ -34,9 +34,9 @@ async function validateAndLoadUserProfile() {
     const container = document.getElementById('profile-container');
     if (!container) return;
     
-    console.log('🔄 Validating profile for token:', token ? token.substring(0, 20) + '...' : 'NO TOKEN');
+    // console.log('🔄 Validating profile for token:', token ? token.substring(0, 20) + '...' : 'NO TOKEN');
     
-    container.innerHTML = '<div class="loading-spinner">Loading profile...</div>';
+    // container.innerHTML = '<div class="loading-spinner">Loading profile...</div>';
     
     try {
         const response = await fetch(`${API_BASE_URL}/user/profile`, {
@@ -50,18 +50,17 @@ async function validateAndLoadUserProfile() {
         
         const data = await response.json();
         
-        if (response.ok && data.success && data.data) {
+       if (response.ok && data.success && data.data) {
             renderProfile(data.data);
             loadUserStats();
         } else {
-            renderGuestProfile();
-            if (response.status === 401) {
-                localStorage.removeItem('token');
-            }
+            localStorage.removeItem('token');
+            showLoginPopup();
         }
-    } catch (error) {
+        } catch (error) {
         console.error('Profile error:', error);
-        renderGuestProfile();
+        localStorage.removeItem('token');
+        showLoginPopup();
     }
 }
 

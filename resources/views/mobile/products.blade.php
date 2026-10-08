@@ -39,7 +39,7 @@
 
     <link rel="canonical" href="{{ url()->current() }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ asset('mobile/style.css') }}">
+    <link rel="stylesheet" href="{{ asset('mobile/style.css') }}?v={{ time() }}">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body{
@@ -1085,6 +1085,82 @@
 .sub-strip {
     display: none !important;
 }
+.price-slider-values {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+}
+
+.price-slider-wrapper {
+    position: relative;
+    width: 100%;
+    height: 36px;
+    margin-bottom: 10px;
+}
+
+.price-slider-track {
+    position: absolute;
+    top: 16px;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: #e5e5e5;
+    border-radius: 10px;
+}
+
+.price-slider-range {
+    position: absolute;
+    top: 16px;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 10px;
+}
+
+.price-slider-wrapper input[type="range"] {
+    position: absolute;
+    top: 7px;
+    left: 0;
+    width: 100%;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    pointer-events: none;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.price-slider-wrapper input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.price-slider-wrapper input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.price-slider-wrapper input[type="range"]:focus {
+    outline: none;
+}
 
     </style>
 </head>
@@ -1422,13 +1498,71 @@
 <script src="{{ asset('mobile/script.js') }}"></script>
 
 
+
+<script>
+/* API SPEED OPTIMIZATION ONLY
+   Existing UI, hover logic, filters and rendering logic are intentionally unchanged.
+   Cache is session-only, so fresh data is fetched again after the TTL.
+*/
+const __apiJsonCache = new Map();
+const __apiJsonInflight = new Map();
+
+async function fetchApiJsonFast(url, cacheKey = url, ttl = 2 * 60 * 1000) {
+    const now = Date.now();
+
+    try {
+        const cachedRaw = sessionStorage.getItem(`mj_api_cache_${cacheKey}`);
+        if (cachedRaw) {
+            const cached = JSON.parse(cachedRaw);
+            if (cached && cached.timestamp && (now - cached.timestamp) < ttl) {
+                return cached.data;
+            }
+            sessionStorage.removeItem(`mj_api_cache_${cacheKey}`);
+        }
+    } catch (e) {}
+
+    if (__apiJsonCache.has(cacheKey)) {
+        const cached = __apiJsonCache.get(cacheKey);
+        if (cached && cached.timestamp && (now - cached.timestamp) < ttl) {
+            return cached.data;
+        }
+        __apiJsonCache.delete(cacheKey);
+    }
+
+    if (__apiJsonInflight.has(cacheKey)) {
+        return __apiJsonInflight.get(cacheKey);
+    }
+
+    const request = fetch(url)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`API request failed: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            const entry = { timestamp: Date.now(), data };
+            __apiJsonCache.set(cacheKey, entry);
+            try {
+                sessionStorage.setItem(`mj_api_cache_${cacheKey}`, JSON.stringify(entry));
+            } catch (e) {}
+            return data;
+        })
+        .finally(() => {
+            __apiJsonInflight.delete(cacheKey);
+        });
+
+    __apiJsonInflight.set(cacheKey, request);
+    return request;
+}
+</script>
+
 <script>
     async function preloadAllHoverImages(products) {
     const preloadPromises = products.map(async (p) => {
         if (p.slug) {
             try {
-                const response = await fetch(`${API_BASE_URL}/products/${p.slug}`);
-                const data = await response.json();
+                const data = await fetchApiJsonFast(`${API_BASE_URL}/products/${p.slug}`, `product:${p.slug}`, 10 * 60 * 1000);
                 if (data.success && data.data) {
                     const galleryImages = data.data.gallery_images || [];
                     let hoverImage = galleryImages[1] || galleryImages[0];
@@ -1564,8 +1698,7 @@ async function fetchData() {
 const search = urlParams.get("search");
 
 if (search) {
-    const res = await fetch(`${API_BASE_URL}/products/search?q=${encodeURIComponent(search)}`);
-    const data = await res.json();
+    const data = await fetchApiJsonFast(`${API_BASE_URL}/products/search?q=${encodeURIComponent(search)}`, `search:${encodeURIComponent(search)}`, 2 * 60 * 1000);
 
     currentProducts = data.data.products || data.data || [];
     originalProducts = [...currentProducts];
@@ -1601,8 +1734,7 @@ if (type === 'best-selling' || currentPath === '/best-selling') {
         
         if (collectionMatch && collectionMatch[1]) {
             const categorySlug = collectionMatch[1];
-            const res = await fetch(`${API_BASE_URL}/categories`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories`, `categories`, 5 * 60 * 1000);
             if (data.success) {
                 for (let cat of data.data) {
                     if (cat.children && cat.children.length) {
@@ -1643,8 +1775,7 @@ if (type === 'best-selling' || currentPath === '/best-selling') {
         
         if (!targetSubId) return;
         
-        const res = await fetch(`${API_BASE_URL}/categories`);
-        const data = await res.json();
+        const data = await fetchApiJsonFast(`${API_BASE_URL}/categories`, `categories`, 5 * 60 * 1000);
         
         if (data.success) {
             let mainCat;
@@ -1670,8 +1801,7 @@ if (type === 'best-selling' || currentPath === '/best-selling') {
     async function fetchProducts(subId) {
         const grid = document.getElementById('productsGrid');
         try {
-            const res = await fetch(`${API_BASE_URL}/categories/${subId}/products`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories/${subId}/products`, `categoryProducts:${subId}`, 2 * 60 * 1000);
             
             if (data.success && data.data.products) {
                 currentProducts = data.data.products;
@@ -1683,7 +1813,7 @@ if (type === 'best-selling' || currentPath === '/best-selling') {
                 grid.innerHTML = '<div class="loading">No products found</div>';
             }
         } catch (error) {
-            grid.innerHTML = '<div class="loading">Error loading products</div>';
+            // grid.innerHTML = '<div class="loading">Error loading products</div>';
         }
     }
     
@@ -1730,26 +1860,30 @@ if (type === 'best-selling' || currentPath === '/best-selling') {
     };
     
     async function fetchMultipleSubcategoriesCommon(subIds) {
-        const grid = document.getElementById('productsGrid');
         try {
             let allProducts = [];
-            for (const id of subIds) {
-                const res = await fetch(`${API_BASE_URL}/categories/${id}/products`);
-                const data = await res.json();
+            const responses = await Promise.all(
+                subIds.map(id =>
+                    fetchApiJsonFast(
+                        `${API_BASE_URL}/categories/${id}/products`,
+                        `categoryProducts:${id}`,
+                        2 * 60 * 1000
+                    )
+                )
+            );
+
+            responses.forEach(data => {
                 if (data.success && data.data.products) {
                     allProducts = allProducts.concat(data.data.products);
                 }
-            }
-            allProducts = [...new Map(allProducts.map(p => [p.id, p])).values()];
-            currentProducts = allProducts;
-            originalProducts = [...allProducts];
-            renderProducts(allProducts);
-            updateDesktopFiltersFromProducts(allProducts);
+            });
+
+            return [...new Map(allProducts.map(p => [p.id, p])).values()];
         } catch (error) {
-            grid.innerHTML = '<div class="loading">Error loading products</div>';
+            throw error;
         }
     }
-    
+
     function loadDesktopFilters(mainCategory) {
         const categoryContainer = document.getElementById('desktopCategoryFilters');
         if (categoryContainer && mainCategory.children?.length) {
@@ -1761,57 +1895,255 @@ if (type === 'best-selling' || currentPath === '/best-selling') {
         }
     }
 
-    window.applyDesktopFilters = function() {
-    let filtered = [...currentProducts];
-    let filterApplied = false;
+    let desktopFilterRequestId = 0;
 
-    const selectedCategories = Array.from(document.querySelectorAll('.desktop-category-filter:checked')).map(cb => cb.value);
+    window.applyDesktopFilters = async function() {
+        const requestId = ++desktopFilterRequestId;
+        const grid = document.getElementById('productsGrid');
 
-    if (selectedCategories.length === 1) {
-        changeSubcategory(selectedCategories[0]);
-        return;
-    }
-    if (selectedCategories.length > 1) {
-        fetchMultipleSubcategoriesCommon(selectedCategories);
-        return;
-    }
+        let filtered = [...currentProducts];
+        let filterApplied = false;
 
-    const selectedPriceRanges = Array.from(document.querySelectorAll('.desktop-price-filter:checked')).map(cb => cb.value);
-    if (selectedPriceRanges.length > 0) {
-        filterApplied = true;
-        filtered = filtered.filter(p => {
-            const price = getProductPrice(p);
-            return selectedPriceRanges.some(range => {
-                const [min, max] = range.split('-').map(Number);
-                return price >= min && price <= max;
-            });
-        });
-    }
+        const selectedCategories = Array.from(
+            document.querySelectorAll('.desktop-category-filter:checked')
+        ).map(cb => cb.value);
 
-    const selectedBrands = Array.from(document.querySelectorAll('.desktop-brand-filter:checked')).map(cb => cb.value);
-    if (selectedBrands.length > 0) {
-        filterApplied = true;
-        filtered = filtered.filter(p => selectedBrands.includes(p.brand));
-    }
+        const priceContainer =
+            document.getElementById('desktopPriceFilters');
 
-    const selectedDiscounts = Array.from(document.querySelectorAll('.desktop-discount-filter:checked')).map(cb => parseInt(cb.value));
-    if (selectedDiscounts.length > 0) {
-        filterApplied = true;
-        filtered = filtered.filter(p => {
-            if (p.price && p.final_price && parseFloat(p.price) > parseFloat(p.final_price)) {
-                const discount = Math.round(((parseFloat(p.price) - parseFloat(p.final_price)) / parseFloat(p.price)) * 100);
-                return selectedDiscounts.some(d => discount >= d);
+        const selectedMinPrice =
+            priceContainer && priceContainer.dataset.selectedMin
+                ? parseFloat(priceContainer.dataset.selectedMin)
+                : null;
+
+        const selectedMaxPrice =
+            priceContainer && priceContainer.dataset.selectedMax
+                ? parseFloat(priceContainer.dataset.selectedMax)
+                : null;
+
+        const selectedBrands = Array.from(
+            document.querySelectorAll('.desktop-brand-filter:checked')
+        ).map(cb => cb.value);
+
+        const selectedDiscounts = Array.from(
+            document.querySelectorAll('.desktop-discount-filter:checked')
+        ).map(cb => parseInt(cb.value));
+
+        try {
+            // Category becomes the base product set.
+            // Price / Brand / Discount are then applied to that set.
+            if (selectedCategories.length === 1) {
+                const newSubId = selectedCategories[0];
+
+                currentSub = newSubId;
+
+                document.querySelectorAll('.sub-item').forEach(item => {
+                    item.classList.toggle(
+                        'active',
+                        item.dataset.subid == newSubId
+                    );
+                });
+
+                let subSlug = newSubId;
+                const activeSub = allSubs.find(s => s.id == newSubId);
+
+                if (activeSub) {
+                    subSlug = activeSub.name
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/^-|-$/g, '');
+                }
+
+                const categorySlug =
+                    document.body.dataset.categorySlug || 'necklace';
+
+                window.history.pushState(
+                    {},
+                    '',
+                    `/collection/${categorySlug}/${subSlug}`
+                );
+
+                const data = await fetchApiJsonFast(
+                    `${API_BASE_URL}/categories/${newSubId}/products`,
+                    `categoryProducts:${newSubId}`,
+                    2 * 60 * 1000
+                );
+
+                if (requestId !== desktopFilterRequestId) return;
+
+                if (data.success && data.data.products) {
+                    currentProducts = data.data.products;
+                    originalProducts = [...data.data.products];
+
+                    // Preserve the existing hover-image behavior used by
+                    // normal single-subcategory navigation.
+                    await preloadAllHoverImages(currentProducts);
+
+                    filtered = [...currentProducts];
+                } else {
+                    currentProducts = [];
+                    originalProducts = [];
+                    filtered = [];
+                }
+
+            } else if (selectedCategories.length > 1) {
+                const categoryProducts =
+                    await fetchMultipleSubcategoriesCommon(
+                        selectedCategories
+                    );
+
+                if (requestId !== desktopFilterRequestId) return;
+
+                currentProducts = categoryProducts;
+                originalProducts = [...categoryProducts];
+                await preloadAllHoverImages(currentProducts);
+                filtered = [...categoryProducts];
             }
-            return false;
-        });
+
+            if (
+                selectedMinPrice !== null &&
+                selectedMaxPrice !== null
+            ) {
+                filterApplied = true;
+
+                filtered = filtered.filter(p => {
+                    const price = getProductPrice(p);
+
+                    return (
+                        price >= selectedMinPrice &&
+                        price <= selectedMaxPrice
+                    );
+                });
+            }
+
+            // BRAND
+            if (selectedBrands.length > 0) {
+                filterApplied = true;
+
+                filtered = filtered.filter(p =>
+                    selectedBrands.includes(p.brand)
+                );
+            }
+
+            // DISCOUNT
+            if (selectedDiscounts.length > 0) {
+                filterApplied = true;
+
+                filtered = filtered.filter(p => {
+                    if (
+                        p.price &&
+                        p.final_price &&
+                        parseFloat(p.price) > parseFloat(p.final_price)
+                    ) {
+                        const discount = Math.round(
+                            ((parseFloat(p.price) -
+                                parseFloat(p.final_price)) /
+                                parseFloat(p.price)) * 100
+                        );
+
+                        return selectedDiscounts.some(d => discount >= d);
+                    }
+
+                    return false;
+                });
+            }
+
+            if (requestId !== desktopFilterRequestId) return;
+
+            // When only Category is selected, keep the existing behavior
+            // of refreshing the available filter options. When additional
+            // filters are selected, keep the already-selected options intact
+            // so their values are not replaced before the final render.
+            if (selectedCategories.length > 0 && !filterApplied) {
+                updateDesktopFiltersFromProducts(currentProducts);
+            }
+
+            if (!filterApplied) {
+                renderProducts(currentProducts);
+            } else if (filtered.length > 0) {
+                renderProducts(filtered);
+            } else {
+                grid.innerHTML =
+                    '<div class="loading">No products match your filters</div>';
+            }
+
+        } catch (error) {
+            if (requestId !== desktopFilterRequestId) return;
+        }
+    };
+    window.updateDesktopPriceSlider = function() {
+
+    const priceContainer =
+        document.getElementById('desktopPriceFilters');
+
+    const minSlider =
+        document.getElementById('desktopPriceMin');
+
+    const maxSlider =
+        document.getElementById('desktopPriceMax');
+
+    const minLabel =
+        document.getElementById('desktopPriceMinLabel');
+
+    const maxLabel =
+        document.getElementById('desktopPriceMaxLabel');
+
+    const range =
+        document.getElementById('desktopPriceSliderRange');
+
+    if (
+        !priceContainer ||
+        !minSlider ||
+        !maxSlider
+    ) {
+        return;
     }
 
-    if (!filterApplied) {
-        renderProducts(currentProducts);
-    } else if (filtered.length > 0) {
-        renderProducts(filtered);
-    } else {
-        document.getElementById('productsGrid').innerHTML = '<div class="loading">No products match your filters</div>';
+    let minValue = parseFloat(minSlider.value);
+    let maxValue = parseFloat(maxSlider.value);
+
+    // Don't allow minimum to cross maximum
+    if (minValue > maxValue) {
+        if (event && event.target === minSlider) {
+            minValue = maxValue;
+            minSlider.value = maxValue;
+        } else {
+            maxValue = minValue;
+            maxSlider.value = minValue;
+        }
+    }
+
+    priceContainer.dataset.selectedMin = minValue;
+    priceContainer.dataset.selectedMax = maxValue;
+
+    if (minLabel) {
+        minLabel.textContent =
+            `₹${minValue.toLocaleString('en-IN')}`;
+    }
+
+    if (maxLabel) {
+        maxLabel.textContent =
+            `₹${maxValue.toLocaleString('en-IN')}`;
+    }
+
+    const min =
+        parseFloat(minSlider.min);
+
+    const max =
+        parseFloat(minSlider.max);
+
+    const total =
+        max - min || 1;
+
+    const left =
+        ((minValue - min) / total) * 100;
+
+    const right =
+        ((maxValue - min) / total) * 100;
+
+    if (range) {
+        range.style.left = `${left}%`;
+        range.style.width = `${right - left}%`;
     }
 };
 
@@ -1837,48 +2169,127 @@ window.updateDesktopFiltersFromProducts = function(products) {
     }
     
     const priceContainer = document.getElementById('desktopPriceFilters');
+
     if (priceContainer && products.length > 0) {
-        const currentChecked = Array.from(document.querySelectorAll('.desktop-price-filter:checked')).map(cb => cb.value);
-        const prices = products.map(p => getProductPrice(p)).filter(p => !isNaN(p));
-        const minPrice = Math.min(...prices);
-        const maxPrice = Math.max(...prices);
-        const step = Math.ceil((maxPrice - minPrice) / 4);
-        const ranges = [];
-        let current = minPrice;
-        
-        for (let i = 0; i < 4; i++) {
-            if (i === 0) ranges.push({ min: 0, max: current + step, label: `Below ₹${(current + step).toFixed(0)}` });
-            else if (i === 3) ranges.push({ min: current, max: maxPrice, label: `Above ₹${current.toFixed(0)}` });
-            else ranges.push({ min: current, max: current + step, label: `₹${current.toFixed(0)} - ₹${(current + step).toFixed(0)}` });
-            current += step;
+
+        const prices = products
+            .map(p => getProductPrice(p))
+            .filter(p => !isNaN(p));
+
+        if (prices.length > 0) {
+
+            const minPrice = Math.floor(Math.min(...prices));
+            const maxPrice = Math.ceil(Math.max(...prices));
+
+            const currentMin =
+                parseFloat(priceContainer.dataset.selectedMin);
+
+            const currentMax =
+                parseFloat(priceContainer.dataset.selectedMax);
+
+            const selectedMin =
+                !isNaN(currentMin)
+                    ? Math.max(minPrice, Math.min(currentMin, maxPrice))
+                    : minPrice;
+
+            const selectedMax =
+                !isNaN(currentMax)
+                    ? Math.min(maxPrice, Math.max(currentMax, minPrice))
+                    : maxPrice;
+
+            priceContainer.dataset.minPrice = minPrice;
+            priceContainer.dataset.maxPrice = maxPrice;
+            priceContainer.dataset.selectedMin = selectedMin;
+            priceContainer.dataset.selectedMax = selectedMax;
+
+            priceContainer.innerHTML = `
+                <div class="price-slider-values">
+                    <span id="desktopPriceMinLabel">
+                        ₹${selectedMin.toLocaleString('en-IN')}
+                    </span>
+
+                    <span id="desktopPriceMaxLabel">
+                        ₹${selectedMax.toLocaleString('en-IN')}
+                    </span>
+                </div>
+
+                <div class="price-slider-wrapper">
+
+                    <div class="price-slider-track"></div>
+
+                    <div
+                        class="price-slider-range"
+                        id="desktopPriceSliderRange">
+                    </div>
+
+                    <input
+                        type="range"
+                        id="desktopPriceMin"
+                        min="${minPrice}"
+                        max="${maxPrice}"
+                        step="1"
+                        value="${selectedMin}"
+                        oninput="updateDesktopPriceSlider('min')"
+                        onchange="applyDesktopFilters()"
+                    >
+
+                    <input
+                        type="range"
+                        id="desktopPriceMax"
+                        min="${minPrice}"
+                        max="${maxPrice}"
+                        step="1"
+                        value="${selectedMax}"
+                        oninput="updateDesktopPriceSlider('max')"
+                        onchange="applyDesktopFilters()"
+                    >
+
+                </div>
+            `;
+
+            updateDesktopPriceSlider();
         }
-        
-        priceContainer.innerHTML = ranges.map(range => `
-            <label class="desktop-filter-option">
-                <input type="checkbox" class="desktop-price-filter" value="${range.min}-${range.max}" onchange="applyDesktopFilters()" ${currentChecked.includes(`${range.min}-${range.max}`) ? 'checked' : ''}> ${range.label}
-            </label>
-        `).join('');
     }
-    
-    const discountContainer = document.getElementById('desktopDiscountFilters');
-    if (discountContainer) {
-        const currentChecked = Array.from(document.querySelectorAll('.desktop-discount-filter:checked')).map(cb => cb.value);
-        const discountSet = new Set();
-        products.forEach(p => {
-            if (p.price && p.final_price) {
-                const original = parseFloat(p.price);
-                const final = parseFloat(p.final_price);
-                if (original > final) discountSet.add(Math.round(((original - final) / original) * 100));
-            }
-        });
-        const sortedDiscounts = Array.from(discountSet).sort((a, b) => a - b);
-        discountContainer.innerHTML = sortedDiscounts.map(d => `
-            <label class="desktop-filter-option">
-                <input type="checkbox" class="desktop-discount-filter" value="${d}" onchange="applyDesktopFilters()" ${currentChecked.includes(String(d)) ? 'checked' : ''}> ${d}% & above
-            </label>
-        `).join('');
-    }
-};
+        const discountContainer = document.getElementById('desktopDiscountFilters');
+        if (discountContainer) {
+            const currentChecked = Array.from(
+                document.querySelectorAll('.desktop-discount-filter:checked')
+            ).map(cb => cb.value);
+
+            // Show clean standard discount buckets instead of every
+            // individual discount percentage from the products.
+            let maxDiscount = 0;
+
+            products.forEach(p => {
+                if (p.price && p.final_price) {
+                    const original = parseFloat(p.price);
+                    const final = parseFloat(p.final_price);
+
+                    if (original > final) {
+                        const discount = Math.round(
+                            ((original - final) / original) * 100
+                        );
+                        maxDiscount = Math.max(maxDiscount, discount);
+                    }
+                }
+            });
+
+            const discountOptions = [10, 20, 30, 40, 50]
+                .filter(d => maxDiscount >= d);
+
+            discountContainer.innerHTML = discountOptions.map(d => `
+                <label class="desktop-filter-option">
+                    <input
+                        type="checkbox"
+                        class="desktop-discount-filter"
+                        value="${d}"
+                        onchange="applyDesktopFilters()"
+                        ${currentChecked.includes(String(d)) ? 'checked' : ''}
+                    > ${d}% & above
+                </label>
+            `).join('');
+        }
+    };
    
     window.resetDesktopFilters = function() {
         document.querySelectorAll('.desktop-category-filter, .desktop-brand-filter, .desktop-discount-filter, .desktop-price-filter').forEach(cb => cb.checked = false);
@@ -1889,19 +2300,22 @@ window.updateDesktopFiltersFromProducts = function(products) {
         const grid = document.getElementById('productsGrid');
         try {
             let allProducts = [];
-            for (const id of subIds) {
-                const res = await fetch(`${API_BASE_URL}/categories/${id}/products`);
-                const data = await res.json();
+            const responses = await Promise.all(
+                subIds.map(id =>
+                    fetchApiJsonFast(`${API_BASE_URL}/categories/${id}/products`, `categoryProducts:${id}`, 2 * 60 * 1000)
+                )
+            );
+            responses.forEach(data => {
                 if (data.success && data.data.products) {
                     allProducts = allProducts.concat(data.data.products);
                 }
-            }
+            });
             allProducts = [...new Map(allProducts.map(p => [p.id, p])).values()];
             currentProducts = allProducts;
             originalProducts = [...allProducts];
             renderProducts(allProducts);
         } catch (error) {
-            grid.innerHTML = '<div class="loading">Error loading products</div>';
+            // grid.innerHTML = '<div class="loading">Error loading products</div>';
         }
     }
 
@@ -1917,8 +2331,7 @@ window.updateDesktopFiltersFromProducts = function(products) {
     
     if (!categoryId && !subcategoryId && collectionMatch && collectionMatch[1]) {
         try {
-            const res = await fetch(`${API_BASE_URL}/categories`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories`, `categories`, 5 * 60 * 1000);
             if (data.success) {
                 const mainSlug = collectionMatch[1];
                 const subSlug = collectionMatch[2] || null;
@@ -1951,8 +2364,7 @@ window.updateDesktopFiltersFromProducts = function(products) {
     
     if (filterType === 'category') {
         try {
-            const res = await fetch(`${API_BASE_URL}/categories`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories`, `categories`, 5 * 60 * 1000);
             if (data.success) {
                 let targetCategory = null;
                 if (categoryId) targetCategory = data.data.find(c => c.id == categoryId);
@@ -1965,8 +2377,7 @@ window.updateDesktopFiltersFromProducts = function(products) {
     }
     else if (filterType === 'price') {
         if (targetId) {
-            const res = await fetch(`${API_BASE_URL}/categories/${targetId}/products`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories/${targetId}/products`, `categoryProducts:${targetId}`, 2 * 60 * 1000);
             if (data.success && data.data.products && data.data.products.length) {
                 const prices = data.data.products.map(p => parseFloat(p.final_price || p.price)).filter(p => !isNaN(p));
                 const minPrice = Math.min(...prices);
@@ -1982,8 +2393,7 @@ window.updateDesktopFiltersFromProducts = function(products) {
     }
     else if (filterType === 'brand') {
         if (targetId) {
-            const res = await fetch(`${API_BASE_URL}/categories/${targetId}/products`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories/${targetId}/products`, `categoryProducts:${targetId}`, 2 * 60 * 1000);
             if (data.success && data.data.products) {
                 const brands = new Set();
                 data.data.products.forEach(p => { if (p.brand) brands.add(p.brand); });
@@ -1993,23 +2403,42 @@ window.updateDesktopFiltersFromProducts = function(products) {
     }
     else if (filterType === 'discount') {
         if (targetId) {
-            const res = await fetch(`${API_BASE_URL}/categories/${targetId}/products`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(
+                `${API_BASE_URL}/categories/${targetId}/products`,
+                `categoryProducts:${targetId}`,
+                2 * 60 * 1000
+            );
+
             if (data.success && data.data.products) {
-                const discountSet = new Set();
+                let maxDiscount = 0;
+
                 data.data.products.forEach(p => {
-                    if (p.price && p.final_price && parseFloat(p.price) > parseFloat(p.final_price)) {
-                        discountSet.add(Math.round(((parseFloat(p.price) - parseFloat(p.final_price)) / parseFloat(p.price)) * 100));
+                    if (
+                        p.price &&
+                        p.final_price &&
+                        parseFloat(p.price) > parseFloat(p.final_price)
+                    ) {
+                        const discount = Math.round(
+                            ((parseFloat(p.price) - parseFloat(p.final_price)) /
+                                parseFloat(p.price)) * 100
+                        );
+
+                        maxDiscount = Math.max(maxDiscount, discount);
                     }
                 });
-                options = Array.from(discountSet).sort((a, b) => a - b).map(d => ({ value: d, label: `${d}% & above` }));
+
+                options = [10, 20, 30, 40, 50]
+                    .filter(d => maxDiscount >= d)
+                    .map(d => ({
+                        value: `${d}%`,
+                        label: `${d}% & above`
+                    }));
             }
         }
     }
     else if (filterType === 'size') {
         if (targetId) {
-            const res = await fetch(`${API_BASE_URL}/categories/${targetId}/products`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories/${targetId}/products`, `categoryProducts:${targetId}`, 2 * 60 * 1000);
             if (data.success && data.data.products) {
                 const sizeSet = new Set();
                 data.data.products.forEach(product => {
@@ -2028,8 +2457,7 @@ window.updateDesktopFiltersFromProducts = function(products) {
     else if (filterType === 'color') {
         if (targetId) {
             const colorSet = new Set();
-            const res = await fetch(`${API_BASE_URL}/categories/${targetId}/products`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories/${targetId}/products`, `categoryProducts:${targetId}`, 2 * 60 * 1000);
             if (data.success && data.data.products) {
                 data.data.products.forEach(product => {
                     if (Array.isArray(product.variants)) {
@@ -2051,8 +2479,7 @@ window.updateDesktopFiltersFromProducts = function(products) {
     else if (filterType === 'fabric') {
         if (targetId) {
             const fabricSet = new Set();
-            const res = await fetch(`${API_BASE_URL}/categories/${targetId}/products`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories/${targetId}/products`, `categoryProducts:${targetId}`, 2 * 60 * 1000);
             if (data.success && data.data.products) {
                 data.data.products.forEach(product => {
                     if (product.fabric) fabricSet.add(product.fabric);
@@ -2067,8 +2494,7 @@ window.updateDesktopFiltersFromProducts = function(products) {
     else if (filterType === 'occasion') {
         if (targetId) {
             const occasionSet = new Set();
-            const res = await fetch(`${API_BASE_URL}/categories/${targetId}/products`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories/${targetId}/products`, `categoryProducts:${targetId}`, 2 * 60 * 1000);
             if (data.success && data.data.products) {
                 data.data.products.forEach(product => {
                     if (product.occasion) occasionSet.add(product.occasion);
@@ -2173,8 +2599,7 @@ window.updateDesktopFiltersFromProducts = function(products) {
 
     try {
 
-        const res = await fetch(`${API_BASE_URL}/products/top-selling`);
-        const data = await res.json();
+        const data = await fetchApiJsonFast(`${API_BASE_URL}/products/top-selling`, `topSelling`, 2 * 60 * 1000);
 
         if (data.success && data.data) {
 
@@ -2218,8 +2643,8 @@ window.updateDesktopFiltersFromProducts = function(products) {
 
     } catch (error) {
 
-        console.error(error);
-        grid.innerHTML = '<div class="loading">Error loading products</div>';
+        // console.error(error);
+        // grid.innerHTML = '<div class="loading">Error loading products</div>';
 
     }
 }
@@ -2232,8 +2657,7 @@ async function fetchBestSellerProducts() {
 
     try {
 
-        const res = await fetch(`${API_BASE_URL}/best-sellers`);
-        const data = await res.json();
+        const data = await fetchApiJsonFast(`${API_BASE_URL}/best-sellers`, `bestSellers`, 2 * 60 * 1000);
 
         if (data.success && data.data) {
 
@@ -2373,8 +2797,7 @@ async function fetchBestSellerProducts() {
     if (!navMenu) return;
     
     try {
-        const res = await fetch(`${API_BASE_URL}/categories`);
-        const data = await res.json();
+        const data = await fetchApiJsonFast(`${API_BASE_URL}/categories`, `categories`, 5 * 60 * 1000);
         if (data.success) {
             const categories = data.data.slice(0, 5);
             navMenu.innerHTML = categories.map(cat => {
@@ -2530,14 +2953,12 @@ async function fetchBestSellerProducts() {
             if (q.length === 0) { suggestionsBox.style.display = "none"; suggestionsBox.innerHTML = ""; return; }
             try {
                 if (q.length === 1) {
-                    const res = await fetch(`${API_BASE_URL}/products/suggestions?q=${encodeURIComponent(q)}`);
-                    const data = await res.json();
+                    const data = await fetchApiJsonFast(`${API_BASE_URL}/products/suggestions?q=${encodeURIComponent(q)}`, `suggestions:${encodeURIComponent(q)}`, 30 * 1000);
                     if (data.success) renderSuggestions(data.data.products);
                     return;
                 }
                 timer = setTimeout(async () => {
-                    const res = await fetch(`${API_BASE_URL}/products/suggestions?q=${encodeURIComponent(q)}`);
-                    const data = await res.json();
+                    const data = await fetchApiJsonFast(`${API_BASE_URL}/products/suggestions?q=${encodeURIComponent(q)}`, `suggestions:${encodeURIComponent(q)}`, 30 * 1000);
                     if (data.success) renderSuggestions(data.data.products);
                 }, 200);
             } catch (err) { console.log(err); }
@@ -2550,8 +2971,7 @@ async function fetchBestSellerProducts() {
 }
 async function fetchAppSettingsForProducts() {
         try {
-            const response = await fetch(`${API_BASE_URL}/app-settings`);
-            const data = await response.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/app-settings`, `appSettings`, 10 * 60 * 1000);
             if (data.success) {
                 const headerLogo = data.data.header_logo || data.data.app_logo;
                 const desktopLogoEl = document.getElementById('desktopHeaderLogo');
@@ -2570,8 +2990,7 @@ async function fetchAppSettingsForProducts() {
     }
     async function updateMobileLogo() {
         try {
-            const res = await fetch(`${API_BASE_URL}/app-settings`);
-            const data = await res.json();
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/app-settings`, `appSettings`, 10 * 60 * 1000);
             if (data.success) {
                 const logo = data.data.header_logo || data.data.app_logo;
                 const img = document.getElementById('mobileHeaderLogo');
@@ -2587,7 +3006,7 @@ async function fetchAppSettingsForProducts() {
         initWebSearchDropdown();
     });    
     setTimeout(function() {
-        fetch(`${API_BASE_URL}/app-settings`).then(r => r.json()).then(data => {
+        fetchApiJsonFast(`${API_BASE_URL}/app-settings`, `appSettings`, 10 * 60 * 1000).then(data => {
             if (data.success) {
                 const logo = data.data.header_logo || data.data.app_logo;
                 const img = document.getElementById('mobileHeaderLogo');

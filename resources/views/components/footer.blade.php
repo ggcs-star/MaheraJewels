@@ -458,8 +458,20 @@ const orgRes = await fetch(
             const categories = catData.data.slice(0, 6);
             if (list) {
                 list.innerHTML = categories.map(cat => {
-                    const slug = cat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                    const linkUrl = `/collection/${slug}`;
+                    const slug = cat.name
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/^-|-$/g, '');
+
+                    let linkUrl;
+
+                    if (slug === 'trending') {
+                        linkUrl = '/top-selling';
+                    } else if (slug === 'bestsellers' || slug === 'best-sellers' || slug === 'best-seller') {
+                        linkUrl = '/best-selling';
+                    } else {
+                        linkUrl = `/collection/${slug}`;
+                    }
                     
                     return `
                         <li>
