@@ -1329,6 +1329,11 @@
     <div class="desktop-products-area">
         <div class="sub-strip" id="subStrip"></div>
         <div class="products" id="productsGrid"></div>
+        <div style="text-align:center; margin:24px 0;">
+            <button id="loadMoreProductsBtn" onclick="loadMoreProducts()" style="display:none; padding:12px 32px; border:1px solid #d4af37; background:#fff; color:#d4af37; border-radius:4px; cursor:pointer; font-size:14px; font-weight:600;">
+                Load More
+            </button>
+        </div>
     </div>
 </div>
 
@@ -1604,6 +1609,9 @@ async function fetchApiJsonFast(url, cacheKey = url, ttl = 2 * 60 * 1000) {
     let wishlist = JSON.parse(localStorage.getItem('wishlist')) || [];
     let currentProducts = [];
     let originalProducts = [];
+    let loadMoreSubId = null;
+    let loadMorePage = 1;
+    let loadMoreLastPage = 1;
     
     function getProductPrice(p) {
     // ✅ Sirf product_price use karo
@@ -1615,14 +1623,14 @@ async function fetchApiJsonFast(url, cacheKey = url, ttl = 2 * 60 * 1000) {
         return parseFloat(p.price || p.mrp || p.product_price || 0);
     }
 
-function renderProducts(products) {
+function renderProducts(products, append = false) {
     const grid = document.getElementById('productsGrid');
     if (!grid) return;
-    if (!products.length) { 
-        grid.innerHTML = '<div class="loading">No products found</div>'; 
-        return; 
+    if (!products.length) {
+        if (!append) grid.innerHTML = '<div class="loading">No products found</div>';
+        return;
     }
-    
+
     const latestWishlist = JSON.parse(localStorage.getItem('wishlist')) || [];
     const fallback = 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?q=80&w=200&auto=format&fit=crop';
 products.forEach(p => {
@@ -1634,7 +1642,7 @@ products.forEach(p => {
         console.log('getProductPrice:', getProductPrice(p));
     }
 });
-    grid.innerHTML = products.map(p => {
+    const cardsHtml = products.map(p => {
         const price = getProductPrice(p);
         const mrp = getProductMrp(p);
         const discount = mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0;
@@ -1688,6 +1696,12 @@ products.forEach(p => {
             </div>
         </div>`;
     }).join('');
+
+    if (append) {
+        grid.insertAdjacentHTML('beforeend', cardsHtml);
+    } else {
+        grid.innerHTML = cardsHtml;
+    }
 }
 
 
@@ -1738,14 +1752,18 @@ if (collectionMatch && collectionMatch[2]) {
             const categorySlug = collectionMatch[1];
             const data = await fetchApiJsonFast(`${API_BASE_URL}/categories`, `categories`, 5 * 60 * 1000);
             if (data.success) {
-                const slugify = (cat) => cat.slug || cat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                // Site-wide links are built from the category NAME (see footer.blade.php,
+                // products.blade.php sidebar links, order-confirmation.blade.php), not the
+                // stored `slug` column - admin slugs can go stale when a category is renamed
+                // without updating its slug field. Match against both so neither breaks.
+                const nameSlug = (obj) => obj.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                const matchesSlug = (obj, target) => nameSlug(obj) === target || (!!obj.slug && obj.slug === target);
                 for (let cat of data.data) {
-                    const mainSlug = slugify(cat);
-                    if (mainSlug === categorySlug) {
+                    if (matchesSlug(cat, categorySlug)) {
                         if (cat.children && cat.children.length) {
                             if (targetSubName) {
                                 for (let sub of cat.children) {
-                                    if (slugify(sub) === targetSubName) {
+                                    if (matchesSlug(sub, targetSubName)) {
                                         targetSubId = sub.id;
                                         break;
                                     }
@@ -1763,7 +1781,7 @@ if (collectionMatch && collectionMatch[2]) {
                     }
                     if (cat.children && cat.children.length) {
                         for (let sub of cat.children) {
-                            if (slugify(sub) === categorySlug) {
+                            if (matchesSlug(sub, categorySlug)) {
                                 targetSubId = sub.id;
                                 currentSub = targetSubId;
                                 break;
@@ -1819,22 +1837,87 @@ if (collectionMatch && collectionMatch[2]) {
     async function fetchProducts(subId) {
         const grid = document.getElementById('productsGrid');
         try {
-            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories/${subId}/products`, `categoryProducts:${subId}`, 2 * 60 * 1000);
-            
+            const data = await fetchApiJsonFast(`${API_BASE_URL}/categories/${subId}/products?page=1`, `categoryProducts:${subId}:1`, 2 * 60 * 1000);
+
             if (data.success && data.data.products) {
                 currentProducts = data.data.products;
                 originalProducts = [...data.data.products];
                 await preloadAllHoverImages(currentProducts);
                 renderProducts(currentProducts);
                 updateDesktopFiltersFromProducts(currentProducts);
+
+                loadMoreSubId = subId;
+                loadMorePage = data.data.pagination?.current_page || 1;
+                loadMoreLastPage = data.data.pagination?.last_page || 1;
+                updateLoadMoreButton();
             }else {
                 grid.innerHTML = '<div class="loading">No products found</div>';
+                loadMoreLastPage = 1;
+                updateLoadMoreButton();
             }
         } catch (error) {
             // grid.innerHTML = '<div class="loading">Error loading products</div>';
         }
     }
-    
+
+    function updateLoadMoreButton() {
+        const btn = document.getElementById('loadMoreProductsBtn');
+        if (!btn) return;
+        btn.style.display = (loadMoreSubId && loadMorePage < loadMoreLastPage) ? 'inline-block' : 'none';
+    }
+
+    // Caps how many product cards stay live in the DOM/memory at once. A category can hold
+    // thousands of products; without this, repeated "Load More" clicks would keep concatenating
+    // arrays and appending DOM nodes forever and eventually freeze/crash the tab. Once the
+    // window is exceeded, the oldest page's cards are dropped from both the DOM and the arrays
+    // that currentProducts/originalProducts/wishlist checks read from.
+    const MAX_RENDERED_PRODUCTS = 96;
+
+    function trimOldestProducts(countToDrop) {
+        if (countToDrop <= 0) return;
+        const grid = document.getElementById('productsGrid');
+        if (grid) {
+            for (let i = 0; i < countToDrop && grid.firstElementChild; i++) {
+                grid.removeChild(grid.firstElementChild);
+            }
+        }
+        currentProducts = currentProducts.slice(countToDrop);
+        originalProducts = originalProducts.slice(countToDrop);
+    }
+
+    window.loadMoreProducts = async function() {
+        if (!loadMoreSubId || loadMorePage >= loadMoreLastPage) return;
+        const nextPage = loadMorePage + 1;
+        const btn = document.getElementById('loadMoreProductsBtn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
+        try {
+            const data = await fetchApiJsonFast(
+                `${API_BASE_URL}/categories/${loadMoreSubId}/products?page=${nextPage}`,
+                `categoryProducts:${loadMoreSubId}:${nextPage}`,
+                2 * 60 * 1000
+            );
+            if (data.success && data.data.products) {
+                currentProducts = currentProducts.concat(data.data.products);
+                originalProducts = originalProducts.concat(data.data.products);
+                await preloadAllHoverImages(data.data.products);
+                renderProducts(data.data.products, true);
+
+                const overflow = currentProducts.length - MAX_RENDERED_PRODUCTS;
+                if (overflow > 0) trimOldestProducts(overflow);
+
+                updateDesktopFiltersFromProducts(currentProducts);
+                loadMorePage = data.data.pagination?.current_page || nextPage;
+                loadMoreLastPage = data.data.pagination?.last_page || loadMoreLastPage;
+            }
+        } catch (error) {
+            // ignore, button stays clickable to retry
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Load More'; }
+            updateLoadMoreButton();
+        }
+    };
+
+
     function renderSubs() {
         const strip = document.getElementById('subStrip');
         if (!strip) return;
