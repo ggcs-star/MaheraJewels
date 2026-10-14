@@ -239,9 +239,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const isAllProductsPage = currentPath.endsWith('/all-products');
 
-    const categoryId = isAllProductsPage
-        ? '29'
-        : document.body.dataset.categoryId;
+    let categoryId = document.body.dataset.categoryId;
+
+    if (isAllProductsPage) {
+        const catData = await window.app.callAPI(`${window.API_BASE_URL}/categories`);
+        if (catData.success) {
+            const allProductsCat = catData.data.find(c => (c.slug || '') === 'all-products');
+            if (allProductsCat) categoryId = allProductsCat.id;
+        }
+    }
 
     if (!categoryId || !window.app || !window.app.callAPI) {
         console.error('Category ID or API helper is missing.');

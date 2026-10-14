@@ -1730,45 +1730,40 @@ const path = window.location.pathname.replace(/\/+$/, '');
 
 const collectionMatch = path.match(/\/collection\/([^\/]+)(?:\/([^\/]+))?/);
 
-// All Products page
-if (collectionMatch && collectionMatch[1].toLowerCase() === 'all-products') {
-    targetSubId = '29';
-    currentSub = targetSubId;
-} else if (collectionMatch && collectionMatch[2]) {
+if (collectionMatch && collectionMatch[2]) {
     targetSubName = decodeURIComponent(collectionMatch[2]);
 }
-        
-        if (collectionMatch && collectionMatch[2]) {
-            targetSubName = decodeURIComponent(collectionMatch[2]);
-        }
-        
+
         if (collectionMatch && collectionMatch[1]) {
             const categorySlug = collectionMatch[1];
             const data = await fetchApiJsonFast(`${API_BASE_URL}/categories`, `categories`, 5 * 60 * 1000);
             if (data.success) {
+                const slugify = (cat) => cat.slug || cat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
                 for (let cat of data.data) {
-                    if (cat.children && cat.children.length) {
-                        let mainSlug = cat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                        if (mainSlug === categorySlug) {
+                    const mainSlug = slugify(cat);
+                    if (mainSlug === categorySlug) {
+                        if (cat.children && cat.children.length) {
                             if (targetSubName) {
                                 for (let sub of cat.children) {
-                                    let subSlug = sub.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                                    if (subSlug === targetSubName) {
+                                    if (slugify(sub) === targetSubName) {
                                         targetSubId = sub.id;
-                                        currentSub = targetSubId;
                                         break;
                                     }
                                 }
                             }
-                            if (!targetSubId && cat.children.length) {
+                            if (!targetSubId) {
                                 targetSubId = cat.children[0].id;
-                                currentSub = targetSubId;
                             }
-                            break;
+                        } else {
+                            // Leaf category (e.g. "All Products") - use its own id directly.
+                            targetSubId = cat.id;
                         }
+                        currentSub = targetSubId;
+                        break;
+                    }
+                    if (cat.children && cat.children.length) {
                         for (let sub of cat.children) {
-                            let subSlug = sub.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                            if (subSlug === categorySlug) {
+                            if (slugify(sub) === categorySlug) {
                                 targetSubId = sub.id;
                                 currentSub = targetSubId;
                                 break;
@@ -1781,8 +1776,21 @@ if (collectionMatch && collectionMatch[1].toLowerCase() === 'all-products') {
         } else {
             targetSubId = document.body.dataset.subcategoryId;
             currentSub = targetSubId;
+
+            if (!targetSubId && catId) {
+                const catData = await fetchApiJsonFast(`${API_BASE_URL}/categories`, `categories`, 5 * 60 * 1000);
+                if (catData.success) {
+                    const mainCat = catData.data.find(c => c.id == catId);
+                    if (mainCat && mainCat.children && mainCat.children.length) {
+                        targetSubId = mainCat.children[0].id;
+                    } else if (mainCat) {
+                        targetSubId = catId;
+                    }
+                    currentSub = targetSubId;
+                }
+            }
         }
-        
+
         if (!targetSubId) return;
         
         const data = await fetchApiJsonFast(`${API_BASE_URL}/categories`, `categories`, 5 * 60 * 1000);
