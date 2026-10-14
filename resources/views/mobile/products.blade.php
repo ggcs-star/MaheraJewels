@@ -135,6 +135,9 @@
             grid-template-columns:repeat(2,1fr);
             gap:16px;
             padding:16px;
+            padding-bottom:16px;
+        }
+        #loadMoreWrapper {
             padding-bottom:calc(130px + env(safe-area-inset-bottom));
         }
         
@@ -1329,7 +1332,7 @@
     <div class="desktop-products-area">
         <div class="sub-strip" id="subStrip"></div>
         <div class="products" id="productsGrid"></div>
-        <div style="text-align:center; margin:24px 0;">
+        <div id="loadMoreWrapper" style="text-align:center; margin:24px 0;">
             <button id="loadMoreProductsBtn" onclick="loadMoreProducts()" style="display:none; padding:12px 32px; border:1px solid #d4af37; background:#fff; color:#d4af37; border-radius:4px; cursor:pointer; font-size:14px; font-weight:600;">
                 Load More
             </button>
