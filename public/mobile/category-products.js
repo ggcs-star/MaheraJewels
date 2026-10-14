@@ -1,8 +1,45 @@
 const API_BASE_URL = window.API_BASE_URL;
-(function() {
-    if (!document.body.classList.contains('category-products-page')) return;
 
-    const categoryId = document.body.dataset.categoryId;
+(function () {
+    const body = document.body;
+
+    const isCategoryPage = body.classList.contains('category-products-page');
+
+    const currentPath = window.location.pathname.replace(/\/+$/, '');
+
+    const isAllProductsPage = currentPath.endsWith('/all-products');
+
+    // Sirf category listing aur All Products page par JS chalao
+    if (!isCategoryPage && !isAllProductsPage) {
+        return;
+    }
+
+    // All Products category ki ID database ke according 29 hai
+    const categoryId = isAllProductsPage
+        ? '29'
+        : body.dataset.categoryId;
+
+    if (!API_BASE_URL) {
+        console.error('API_BASE_URL is missing.');
+        return;
+    }
+
+    if (!categoryId) {
+        console.error('Category ID not found on the page.');
+        return;
+    }
+
+    console.log('Category ID:', categoryId);
+    console.log(
+        'Products API:',
+        `${API_BASE_URL}/categories/${categoryId}/products`
+    );
+
+    // Iske neeche apna existing code same rakho:
+    // let products = [];
+    // let filteredProducts = [];
+    // let currentSort = 'relevance';
+
     let products = [];
     let filteredProducts = [];
     let currentSort = 'relevance';

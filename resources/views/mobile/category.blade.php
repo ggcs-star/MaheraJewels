@@ -23,8 +23,11 @@
     </style>
 </head>
 
-<body data-page="category-detail" data-category-id="{{ $categoryId ?? '' }}">
-
+<body
+    class="category-products-page"
+    data-page="category-detail"
+    data-category-id="{{ $categoryId ?? '' }}"
+>
 <!-- Header -->
 <header class="site-header" id="site-header"></header>
 
@@ -232,8 +235,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <script>
 document.addEventListener('DOMContentLoaded', async () => {
-    const categoryId = document.body.dataset.categoryId || window.location.pathname.split('/').pop();
-    
+    const currentPath = window.location.pathname.replace(/\/+$/, '');
+
+    const isAllProductsPage = currentPath.endsWith('/all-products');
+
+    const categoryId = isAllProductsPage
+        ? '29'
+        : document.body.dataset.categoryId;
+
+    if (!categoryId || !window.app || !window.app.callAPI) {
+        console.error('Category ID or API helper is missing.');
+        return;
+    }
+
+    console.log('Category ID:', categoryId);
+    console.log(
+        'Products API:',
+        `${window.API_BASE_URL}/categories/${categoryId}/products`
+    );
+
+    // Iske neeche aapka existing code same rahega.
    
     const catRes = await window.app.callAPI(`${window.API_BASE_URL}/categories/${categoryId}`);    
     if (catRes.success && catRes.data) {
