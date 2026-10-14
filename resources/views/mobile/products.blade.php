@@ -1723,10 +1723,20 @@ if (type === 'best-selling' || currentPath === '/best-selling') {
     return;
 }
         
-        let targetSubId = null;
-        let targetSubName = null;
-        const path = window.location.pathname;
-        const collectionMatch = path.match(/\/collection\/([^\/]+)(?:\/([^\/]+))?/);
+  let targetSubId = null;
+let targetSubName = null;
+
+const path = window.location.pathname.replace(/\/+$/, '');
+
+const collectionMatch = path.match(/\/collection\/([^\/]+)(?:\/([^\/]+))?/);
+
+// All Products page
+if (collectionMatch && collectionMatch[1].toLowerCase() === 'all-products') {
+    targetSubId = '29';
+    currentSub = targetSubId;
+} else if (collectionMatch && collectionMatch[2]) {
+    targetSubName = decodeURIComponent(collectionMatch[2]);
+}
         
         if (collectionMatch && collectionMatch[2]) {
             targetSubName = decodeURIComponent(collectionMatch[2]);
