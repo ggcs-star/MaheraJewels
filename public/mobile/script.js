@@ -11,6 +11,7 @@ const APP_CONFIG = {
         TOP_SELLING: `${API_BASE_URL}/products/top-selling`,
         BANNERS: `${API_BASE_URL}/banners`,
         APP_SETTINGS: `${API_BASE_URL}/app-settings`,
+        ALL_PRODUCTS: `${API_BASE_URL}/products`,
     },
     FALLBACK_IMAGE: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?q=80&w=600&auto=format&fit=crop',
 };
@@ -243,7 +244,14 @@ class RapidRetailsEngine {
             }
             const topCategories = this.allCategories.slice(0, 5);
             const categoriesHtml = topCategories.map(cat => {
-            let url = `/collection/${cat.slug}`;
+            
+            let categorySlug = (cat.name || '').trim().toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+
+            let url = `/collection/${categorySlug}`;
+
+            
 
             if (cat.slug === "trending") {
                 url = "/top-selling";
@@ -297,7 +305,8 @@ class RapidRetailsEngine {
                                 Profile
                             </a>
 
-                            <a href="/wishlist" class="action-link">
+                            <a href="javascript:void(0)" class="action-link"
+                                onclick="if (!localStorage.getItem('token')) { showLoginPopup(); } else { window.location.href='/wishlist'; }">
                                 <svg class="header-icon" viewBox="0 0 24 24" fill="none">
                                     <path d="M12 21s-6-4.35-9-8.5C-1 6.5 4 2 8 5c2 1.5 4 3.5 4 3.5S14 6.5 16 5c4-3 9 1.5 5 7.5C18 16.65 12 21 12 21z"
                                         stroke="currentColor" stroke-width="2"/>
@@ -359,7 +368,8 @@ class RapidRetailsEngine {
                             </div>
                         </div>
                         <div class="header-icons">
-                            <button class="header-icon-btn" onclick="window.location.href='/wishlist'">
+                            <button class="header-icon-btn"
+                                onclick="if (!localStorage.getItem('token')) { showLoginPopup(); } else { window.location.href='/wishlist'; }">
                                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#333333" stroke-width="2">
                                     <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                                 </svg>
@@ -1254,9 +1264,7 @@ html += `<li style="margin-bottom:8px;"><a href="/collection/${subSlug}" style="
 
         const imageUrl = this.resolveImage(cat.image_url) || 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?q=80&w=200&auto=format&fit=crop';
 
-
-
-        return `<div class="trending-card" style="background: ${bgGradient.bg} !important; border: 1px solid ${bgGradient.border} !important;" onclick="redirectToSubcategory(${cat.id})">
+        return `<div class="trending-card" style="background: ${bgGradient.bg} !important; border: 1px solid ${bgGradient.border} !important;" onclick="${(cat.name || '').trim().toLowerCase() === 'all products' ? "window.location.href='/collection/all-products'" : `redirectToSubcategory(${cat.id})`}">
 
             <div class="trending-card-content">
 
@@ -1278,19 +1286,12 @@ html += `<li style="margin-bottom:8px;"><a href="/collection/${subSlug}" style="
 
     }).join('');
 
-
-
     this.setupAutoScroll(container);
-
 }
-
-
 
     setupAutoScroll(container) {
 
         if (this.autoScrollTimer) clearInterval(this.autoScrollTimer);
-
-
 
         const slider = container;
 
@@ -1371,192 +1372,149 @@ html += `<li style="margin-bottom:8px;"><a href="/collection/${subSlug}" style="
     }
 
 
-
-    async renderStyleSpotlight() {
-
+async renderStyleSpotlight() {
     const container = document.getElementById('style-spotlight-grid');
-
     if (!container) return;
 
+    try {
+        const res = await fetch(APP_CONFIG.ENDPOINTS.TOP_SELLING)
+            .then(r => r.json());
 
+        let displayItems = [];
 
-    const res = await fetch(APP_CONFIG.ENDPOINTS.TOP_SELLING).then(r => r.json());
+        if (res.success && res.data) {
+            const items = Array.isArray(res.data)
+                ? res.data
+                : (res.data.products || []);
 
+            displayItems = items.slice(0, 8);
+        }
 
+        if (!displayItems.length) {
+            container.innerHTML = '';
+            return;
+        }
 
-    let displayItems = [];
+        // STEP 1: Render product cards immediately.
+        const itemsHtml = displayItems.map(item => {
+            const brand = item.brand || 'Premium Brand';
+            const name = item.name || 'Fashion Item';
+            const rating = item.rating || '4.5';
+            const current = this.getProductPrice(item);
+            const mainImage = this.resolveImage(item.image_url);
 
-    if (res.success && res.data) {
+            return `
+                <div class="spotlight-card"
+                     onclick="window.location.href='/product/${item.slug || '#'}'">
 
-        let items = Array.isArray(res.data) ? res.data : (res.data.products || []);
+                    <div class="spotlight-card-img">
+                        <img
+                            src="${mainImage}"
+                            alt="${brand} ${name} - MAHERA JEWEL"
+                            data-main="${mainImage}"
+                            data-hover="${mainImage}"
+                            onmouseenter="this.src=this.dataset.hover"
+                            onmouseleave="this.src=this.dataset.main"
+                            onerror="this.onerror=null;this.src='${APP_CONFIG.FALLBACK_IMAGE}'"
+                            loading="lazy"
+                            width="200"
+                            height="200"
+                            decoding="async"
+                        >
 
-        displayItems = items.slice(0, 8);
+                        <div class="rating-badge">
+                            ★ <span>${rating}</span>
+                        </div>
+                    </div>
 
-    }
+                    <div class="spotlight-card-info">
+                        <div class="card-brand">${brand}</div>
 
+                        <div class="card-title">
+                            ${name.length > 35 ? name.substring(0, 35) + '...' : name}
+                        </div>
 
+                        <div class="card-price">
+                            <span class="current-price">₹${current}</span>
+                        </div>
 
-    if (!displayItems.length) {
+                        <button
+                            class="add-to-cart"
+                            onclick="event.stopPropagation(); window.location.href='/product/${item.slug}'"
+                            aria-label="Explore ${name} product details"
+                        >
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path d="M1 1H5L7.68 14.39C7.77144 14.8504 8.02191 15.264 8.38755 15.5583C8.75318 15.8526 9.2107 16.009 9.68 16H19.4C19.8693 16.009 20.3268 15.8526 20.6925 15.5583C21.0581 15.264 21.3086 14.8504 21.4 14.39L23 6H6"
+                                      stroke="currentColor"
+                                      stroke-width="2"
+                                      stroke-linecap="round"/>
+                                <circle cx="9" cy="21" r="1.5" fill="currentColor"/>
+                                <circle cx="20" cy="21" r="1.5" fill="currentColor"/>
+                            </svg>
+                            Explore
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
 
-        container.innerHTML = '';
+        container.innerHTML = `
+            <div class="style-spotlight-section">
+                <div class="spotlight-header">
+                    <h2>Style Spotlight</h2>
+                    <a href="/top-selling" class="spotlight-viewall">View All →</a>
+                </div>
+                <div class="spotlight-grid">${itemsHtml}</div>
+            </div>
+        `;
 
-        return;
+        // STEP 2: Load hover images in the background.
+        // Cards are already visible; these requests won't delay them.
+        const cardImages = container.querySelectorAll('.spotlight-card-img img');
 
-    }
+        displayItems.forEach(async (item, index) => {
+            const cardImage = cardImages[index];
 
-
-
-    const preloadPromises = displayItems.map(async (item) => {
-
-        if (item.slug) {
+            if (!item.slug || !cardImage) return;
 
             try {
+                const response = await fetch(
+                    `${API_BASE_URL}/products/${item.slug}`
+                );
 
-                const response = await fetch(`${API_BASE_URL}/products/${item.slug}`);
+                if (!response.ok) return;
 
                 const data = await response.json();
 
-                if (data.success && data.data) {
+                if (!data.success || !data.data) return;
 
-                    const galleryImages = data.data.gallery_images || [];
+                const galleryImages = data.data.gallery_images || [];
+                const hoverImage = galleryImages[1] || galleryImages[0];
 
-                    const hoverImage = galleryImages[1] || galleryImages[0];
+                if (!hoverImage) return;
 
-                    if (hoverImage) {
+                const hoverImageUrl = this.resolveImage(hoverImage);
+                const preload = new Image();
 
-                        const img = new Image();
+                preload.onload = () => {
+                    cardImage.dataset.hover = hoverImageUrl;
+                };
 
-                        img.src = this.resolveImage(hoverImage);
+                preload.onerror = () => {
+                    cardImage.dataset.hover = hoverImageUrl;
+                };
 
-                        item.hoverImage = this.resolveImage(hoverImage);
+                preload.src = hoverImageUrl;
 
-                    }
+            } catch (error) {
+                // Keep the main image if the gallery request fails.
+            }
+        });
 
-                }
-
-            } catch(e) {}
-
-        }
-
-        return item;
-
-    });
-
-
-
-    await Promise.all(preloadPromises);
-
-
-
-    const itemsHtml = displayItems.map(item => {
-
-        const brand = item.brand || 'Premium Brand';
-
-        const name = item.name || 'Fashion Item';
-
-        const rating = item.rating || '4.5';
-
-        const current = this.getProductPrice(item);
-
-        const clickCount = item.click_count || 0;
-
-        const mainImage = this.resolveImage(item.image_url);
-
-        const hoverImageUrl = item.hoverImage || mainImage;
-
-
-
-        const old = item.mrp || item.original_price || item.price || current;
-
-        const discount = old > current ? Math.round(((old - current) / old) * 100) : 0;
-
-
-
-        return `<div class="spotlight-card" onclick="window.location.href='/product/${item.slug || '#'}'">
-
-            <div class="spotlight-card-img">
-
-                <img src="${mainImage}" 
-
-                    alt="${brand} ${name} - MAHERA JEWEL"
-
-                    data-main="${mainImage}"
-
-                    data-hover="${hoverImageUrl}"
-
-                    onmouseenter="this.src=this.dataset.hover"
-
-                    onmouseleave="this.src=this.dataset.main"
-
-                    onerror="this.src='${APP_CONFIG.FALLBACK_IMAGE}'" 
-
-                    loading="lazy" 
-
-                    width="200" 
-
-                    height="200" 
-
-                    decoding="async">
-
-                 <div class="rating-badge">★ <span>${rating}</span></div>
-
-            </div>
-
-            <div class="spotlight-card-info">
-
-                <div class="card-brand">${brand}</div>
-
-                <div class="card-title">${name.length > 35 ? name.substring(0, 35) + '...' : name}</div>
-
-                <div class="card-price">
-
-                    <span class="current-price">₹${current}</span>
-
-                </div>
-
-
-
-                <button class="add-to-cart" onclick="event.stopPropagation(); window.location.href='/product/${item.slug}'" aria-label="Explore ${name} product details">
-
-                    <svg viewBox="0 0 24 24" fill="none">
-
-                        <path d="M1 1H5L7.68 14.39C7.77144 14.8504 8.02191 15.264 8.38755 15.5583C8.75318 15.8526 9.2107 16.009 9.68 16H19.4C19.8693 16.009 20.3268 15.8526 20.6925 15.5583C21.0581 15.264 21.3086 14.8504 21.4 14.39L23 6H6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-
-                        <circle cx="9" cy="21" r="1.5" fill="currentColor"/>
-
-                        <circle cx="20" cy="21" r="1.5" fill="currentColor"/>
-
-                    </svg>
-
-                    Explore
-
-                </button>
-
-            </div>
-
-        </div>`;
-
-    }).join('');
-
-
-
-    container.innerHTML = `<div class="style-spotlight-section">
-
-        <div class="spotlight-header">
-
-            <h2>Style Spotlight</h2>
-
-           <a href="/top-selling" class="spotlight-viewall">View All →</a>
-
-        </div>
-
-        <div class="spotlight-grid">${itemsHtml}</div>
-
-    </div>`;
-
+    } catch (error) {
+        console.error('Style Spotlight loading failed:', error);
+    }
 }
-
-
 
     async renderDynamicCategorySections() {
 

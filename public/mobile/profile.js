@@ -147,20 +147,20 @@ function updateStats(stats) {
     const statsContainer = document.querySelector('.profile-stats');
     if (!statsContainer) return;
     
-    statsContainer.innerHTML = `
-        <div class="stat-item" onclick="window.location.href='/orders'">
-            <span class="stat-value">${stats.orders}</span>
-            <span class="stat-label">Orders</span>
-        </div>
-        <div class="stat-item" onclick="window.location.href='/wishlist'">
-            <span class="stat-value">${stats.wishlist}</span>
-            <span class="stat-label">Wishlist</span>
-        </div>
-        <div class="stat-item" onclick="window.location.href='/coupons'">
-            <span class="stat-value">0</span>
-            <span class="stat-label">Coupons</span>
-        </div>
-    `;
+    // statsContainer.innerHTML = `
+    //     <div class="stat-item" onclick="window.location.href='/orders'">
+    //         <span class="stat-value">${stats.orders}</span>
+    //         <span class="stat-label">Orders</span>
+    //     </div>
+    //     <div class="stat-item" onclick="window.location.href='/wishlist'">
+    //         <span class="stat-value">${stats.wishlist}</span>
+    //         <span class="stat-label">Wishlist</span>
+    //     </div>
+    //     <div class="stat-item" onclick="window.location.href='/coupons'">
+    //         <span class="stat-value">0</span>
+    //         <span class="stat-label">Coupons</span>
+    //     </div>
+    // `;
 }
 
 function renderProfile(user) {

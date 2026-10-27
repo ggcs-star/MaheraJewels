@@ -255,7 +255,12 @@ const API_BASE_URL = window.API_BASE_URL;
         const variantId = selectedVariant?.id || null;
         
         const availableVariants = product.variants ? product.variants.map(v => ({
-            id: v.id, value: v.variant_value, price: parseFloat(v.final_price) || 0, originalPrice: parseFloat(v.price) || 0
+            id: v.id,
+            value: v.variant_value || v.value || '',
+            price: parseFloat(v.final_price) || parseFloat(v.price) || 0,
+            originalPrice: parseFloat(v.price) || parseFloat(v.final_price) || 0,
+            stock: Math.max(0, Number(v.quantity ?? 0)),
+            inStock: v.in_stock !== false && Number(v.quantity ?? 0) > 0
         })) : [];
 
         let imageUrl = '';
@@ -265,30 +270,61 @@ const API_BASE_URL = window.API_BASE_URL;
         else if (product.image_url) imageUrl = product.image_url;
         else if (product.gallery_images && product.gallery_images.length) imageUrl = product.gallery_images[0];
 
+        const selectedStockVariant = selectedVariant;
+        const stockKnown = selectedStockVariant
+            ? selectedStockVariant.quantity !== undefined && selectedStockVariant.quantity !== null
+            : product.stock !== undefined && product.stock !== null;
+        const availableStock = selectedStockVariant
+            ? Math.max(0, Number(selectedStockVariant.quantity ?? 0))
+            : (stockKnown ? Math.max(0, Number(product.stock)) : null);
+        const selectedInStock = selectedStockVariant
+            ? selectedStockVariant.in_stock !== false && availableStock > 0
+            : (availableStock === null || availableStock > 0);
+
+        if (!selectedInStock || availableStock === 0) {
+            showWishlistToast('Out of stock');
+            return;
+        }
+
         const cartItem = {
-            id: product.id, name: product.name, brand: product.brand || '', 
-            price: finalPrice, 
+            id: product.id, name: product.name, brand: product.brand || '',
+            price: finalPrice,
             mrp: originalPrice,
-            originalPrice: originalPrice, 
-            product_price: product.product_price, 
-            image: imageUrl, 
+            originalPrice: originalPrice,
+            product_price: product.product_price,
+            image: imageUrl,
             slug: product.slug,
-            variantType: variantType, 
-            variantValue: variantValue, 
+            variantType: variantType,
             variantValue: variantValue || '',
-            variantId: variantId, 
+            variantId: variantId,
             categoryId: product.category?.id,
-            
-            quantity: 1, 
-            availableVariants: availableVariants, 
-            rating: product.rating || 4.5, 
+            quantity: 1,
+            stock: availableStock,
+            inStock: selectedInStock,
+            availableVariants: availableVariants,
+            rating: product.rating || 4.5,
             reviewCount: product.review_count || 33
         };
 
-        const existingIndex = cart.findIndex(i => i.id === cartItem.id && i.variantId === cartItem.variantId);
-        if (existingIndex >= 0) cart[existingIndex].quantity += 1;
-        else cart.push(cartItem);
-        
+        const existingIndex = cart.findIndex(i =>
+            String(i.id) === String(cartItem.id) &&
+            String(i.variantId ?? '') === String(cartItem.variantId ?? '')
+        );
+        if (existingIndex >= 0) {
+            const existingQty = Number(cart[existingIndex].quantity) || 0;
+            const currentStock = cartItem.stock ?? cart[existingIndex].stock;
+            if (currentStock !== null && currentStock !== undefined && existingQty + 1 > Number(currentStock)) {
+                showWishlistToast(`Only ${currentStock} item${Number(currentStock) === 1 ? '' : 's'} available in stock`);
+                return;
+            }
+            cart[existingIndex].quantity = existingQty + 1;
+            cart[existingIndex].stock = cartItem.stock ?? cart[existingIndex].stock;
+            cart[existingIndex].inStock = cartItem.inStock;
+            cart[existingIndex].availableVariants = cartItem.availableVariants;
+        } else {
+            cart.push(cartItem);
+        }
+
         localStorage.setItem('cart', JSON.stringify(cart));
         updateCartBadge();
         showConfirmation(product.name);
@@ -314,6 +350,23 @@ const API_BASE_URL = window.API_BASE_URL;
             return;
         }
         
+        if (selectedVariant) {
+            const selectedStock = Math.max(0, Number(selectedVariant.quantity ?? selectedVariant.stock ?? 0));
+            if (selectedVariant.in_stock === false || selectedStock <= 0) {
+                showWishlistToast('Out of stock');
+                return;
+            }
+            const existingCart = JSON.parse(localStorage.getItem('cart')) || [];
+            const existingItem = existingCart.find(item =>
+                String(item.id) === String(currentProduct?.id) &&
+                String(item.variantId ?? '') === String(selectedVariant.id ?? '')
+            );
+            if (existingItem && (Number(existingItem.quantity) || 0) + 1 > selectedStock) {
+                showWishlistToast(`Only ${selectedStock} item${selectedStock === 1 ? '' : 's'} available in stock`);
+                return;
+            }
+        }
+
         let finalPriceToUse = selectedVariant ? (parseFloat(selectedVariant.final_price) || parseFloat(selectedVariant.price) || 0) : getProductPrice(currentProduct);
         
         let mrpValue = currentProduct?.product_price || currentProduct?.price || finalPriceToUse;
@@ -635,34 +688,137 @@ const API_BASE_URL = window.API_BASE_URL;
         const popup = document.querySelector('.color-scroll-popup');
         if (popup) { popup.remove(); document.body.style.overflow = ''; }
     }
-    
-    window.toggleWishlist = function(button, event) {
-        if (event) event.stopPropagation();
-        button.classList.toggle('active');
-        const mainImage = document.getElementById('mainImage');
-        let imageUrl = '';
-        if (mainImage && mainImage.src && mainImage.src !== '') imageUrl = mainImage.src;
-        else if (window.currentProduct?.gallery_images?.length) imageUrl = window.currentProduct.gallery_images[0];
-        else if (window.currentProduct?.image_url) imageUrl = window.currentProduct.image_url;
-        
-        let productPrice = 0;
-        const priceEl = document.getElementById('currentPrice');
-        if (priceEl) productPrice = parseFloat(priceEl.textContent.replace('₹','').replace(/,/g,''));
-        
-        const productData = {
-            id: window.currentProduct?.id, name: window.currentProduct?.name, price: productPrice,
-            image: imageUrl, brand: window.currentProduct?.brand, slug: window.currentProduct?.slug
-        };
-        let wishlist = JSON.parse(localStorage.getItem('wishlist')) || [];
-        if (button.classList.contains('active')) {
-            if (!wishlist.some(item => item.id == productData.id)) { wishlist.push(productData); showWishlistToast('❤️ Added to wishlist'); }
-        } else {
-            wishlist = wishlist.filter(item => item.id != productData.id);
-            showWishlistToast('💔 Removed from wishlist');
+       
+    // Prevent duplicate requests when the heart is clicked repeatedly.
+    window.toggleWishlist = async function (button, event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
         }
-        localStorage.setItem('wishlist', JSON.stringify(wishlist));
-    }
-    
+
+        if (!button || button.dataset.wishlistSaving === 'true') return;
+
+        const token = localStorage.getItem('token');
+        let user = {};
+        try { user = JSON.parse(localStorage.getItem('user') || '{}'); } catch (_) {}
+
+        if (!token || !user.id) {
+            if (typeof window.showLoginPopup === 'function') window.showLoginPopup();
+            else window.location.href = '/user/login';
+            return;
+        }
+
+        const product = window.currentProduct;
+        if (!product || !product.id) {
+            showWishlistToast('Product details could not be loaded');
+            return;
+        }
+
+        const productId = Number(product.id);
+        const apiBase = String(window.API_BASE_URL || '').replace(/\/+$/, '');
+        if (!apiBase) {
+            showWishlistToast('API URL is not configured');
+            return;
+        }
+
+        const headers = {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+        };
+
+        // Use the already-synced heart state. Do not GET the whole wishlist on every click.
+        const wasSaved = button.classList.contains('active');
+        const shouldSave = !wasSaved;
+        button.dataset.wishlistSaving = 'true';
+        button.classList.toggle('active', shouldSave); // immediate visual feedback
+        button.setAttribute('aria-pressed', String(shouldSave));
+        button.setAttribute('aria-busy', 'true');
+
+        try {
+            const mainImage = document.getElementById('mainImage');
+            const priceText = document.getElementById('currentPrice')?.textContent || '0';
+            const price = Number(priceText.replace(/[₹,\s]/g, '')) || 0;
+
+            const response = shouldSave
+                ? await fetch(`${apiBase}/wishlist`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        id: productId,
+                        name: product.name || '',
+                        price,
+                        image: mainImage?.currentSrc || product.image_url || '',
+                        brand: product.brand || '',
+                        slug: product.slug || '',
+                        variantId: window.selectedVariant?.id || null,
+                        variantValue: window.selectedVariant?.value || null,
+                        variantType: window.selectedVariant?.type || null,
+                        mrp: Number(product.product_price || product.price || price)
+                    })
+                })
+                : await fetch(`${apiBase}/wishlist/${encodeURIComponent(productId)}`, {
+                    method: 'DELETE',
+                    headers
+                });
+
+            const result = await response.json();
+            if (!response.ok || result.success === false) {
+                throw new Error(result.message || 'Wishlist update failed');
+            }
+
+            showWishlistToast(shouldSave ? 'Added to wishlist' : 'Removed from wishlist');
+        } catch (error) {
+            // Roll back the optimistic UI if the backend request fails.
+            button.classList.toggle('active', wasSaved);
+            button.setAttribute('aria-pressed', String(wasSaved));
+            console.error('Wishlist API error:', error);
+            showWishlistToast(error.message || 'Could not update wishlist');
+        } finally {
+            delete button.dataset.wishlistSaving;
+            button.removeAttribute('aria-busy');
+        }
+    };
+
+    window.syncProductWishlistHeart = async function () {
+        const button = document.querySelector('.pdp-wishlist');
+        const product = window.currentProduct;
+        const token = localStorage.getItem('token');
+
+        if (!button || !product?.id || !token) {
+            button?.classList.remove('active');
+            return;
+        }
+
+        const apiBase = String(window.API_BASE_URL || '').replace(/\/+$/, '');
+
+        if (!apiBase) return;
+
+        try {
+            const response = await fetch(`${apiBase}/wishlist`, {
+                headers: {
+                    Accept: 'application/json',
+                    Authorization: `Bearer ${token}`
+                }
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !Array.isArray(result.data)) {
+                throw new Error(result.message || 'Could not fetch wishlist');
+            }
+
+            const saved = result.data.some(
+                item => String(item.id ?? item.product_id) === String(product.id)
+            );
+
+            button.classList.toggle('active', saved);
+            button.setAttribute('aria-pressed', String(saved));
+        } catch (error) {
+            console.error('Wishlist status error:', error);
+        }
+    };
+
     window.shareProduct = function() {
         if (navigator.share) navigator.share({ title: currentProduct?.name, url: window.location.href });
         else { navigator.clipboard.writeText(window.location.href); alert('Link copied!'); }
@@ -822,6 +978,14 @@ window.buyNow = function() {
     const categoryId = currentProduct?.category?.id || null;
     const subcategoryId = currentProduct?.subcategory?.id || currentProduct?.category?.parent_id || null;
     
+    const buyNowStock = selectedVariant
+        ? Math.max(0, Number(selectedVariant.quantity ?? 0))
+        : (currentProduct?.stock == null ? null : Math.max(0, Number(currentProduct.stock)));
+    if (buyNowStock === 0 || selectedVariant?.in_stock === false) {
+        showWishlistToast('Out of stock');
+        return;
+    }
+
     const cartItem = {
         id: currentProduct?.id,
         name: currentProduct?.name,
@@ -833,6 +997,8 @@ window.buyNow = function() {
         variantId: selectedVariant?.id || null,
         variantValue: variantValue || '',
         quantity: 1,
+        stock: buyNowStock,
+        inStock: buyNowStock === null ? true : buyNowStock > 0,
         categoryId: categoryId,
         subcategoryId: subcategoryId
     };
@@ -899,6 +1065,7 @@ window.buyNow = function() {
             try {
                 renderProduct(cachedProduct);
                 startImageAutoScroll();
+                fetchBrandFromCategory();
                 return;
             } catch (renderError) {
                 console.error('Cached product render error:', renderError);
@@ -958,17 +1125,57 @@ window.buyNow = function() {
         }
     }
 
-    async function fetchBrandFromCategory() {
-        if (!currentProduct?.category?.id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/categories/${currentProduct.category.id}/products`);
+   
+async function fetchBrandFromCategory() {
+    try {
+        let page = 1;
+        let lastPage = 1;
+        let productInList = null;
+
+        do {
+            const res = await fetch(
+                `${API_BASE_URL}/products?page=${page}`,
+                { cache: 'no-store' }
+            );
+
+            if (!res.ok) return;
+
             const data = await res.json();
-            if (data.success && data.data?.products) {
-                const productInCategory = data.data.products.find(p => p.id == currentProduct.id);
-                if (productInCategory?.brand) currentProduct.brand = productInCategory.brand;
-            }
-        } catch (error) { console.error('Error fetching brand:', error); }
+
+            const products = Array.isArray(data.data?.products)
+                ? data.data.products
+                : Array.isArray(data.data)
+                    ? data.data
+                    : [];
+
+            productInList = products.find(p =>
+                (p.slug && p.slug === currentProduct?.slug) ||
+                (p.id != null &&
+                    String(p.id) === String(currentProduct?.id))
+            );
+
+            lastPage = data.data?.pagination?.last_page || 1;
+
+            if (productInList) break;
+
+            page++;
+        } while (page <= lastPage);
+
+        const brand = productInList?.brand || currentProduct?.brand;
+
+        if (brand) {
+            currentProduct.brand = brand;
+            window.currentProduct = currentProduct;
+
+            document.querySelectorAll('.pdp-brand').forEach(element => {
+                element.textContent = brand;
+            });
+        }
+    } catch (error) {
+        console.error('Error fetching brand:', error);
     }
+}
+
     
     async function fetchCoupons() {
         try {
@@ -1122,8 +1329,14 @@ window.buyNow = function() {
                     item.addEventListener('mouseenter', showPopup);
                     item.addEventListener('mouseleave', hidePopup);
                 });
-                popup.addEventListener('mouseenter', () => { if (hideTimeout) clearTimeout(hideTimeout); popup.style.display = 'block'; });
-                popup.addEventListener('mouseleave', hidePopup);
+                if (popup) {
+                    popup.addEventListener('mouseenter', () => {
+                        if (hideTimeout) clearTimeout(hideTimeout);
+                        popup.style.display = 'block';
+                    });
+
+                    popup.addEventListener('mouseleave', hidePopup);
+                }
             }
         }).catch(err => console.error('Error loading categories:', err));
     }
@@ -1193,8 +1406,8 @@ html += `<li style="margin-bottom:8px;"><a href="/collection/${subSlug}" style="
                     id: v.id, type: v.variant_type || 'Size', value: v.variant_value,
                     price: parseFloat(v.price) || variantPrice, 
                     final_price: parseFloat(v.final_price) || variantPrice, 
-                    stock: v.quantity || 5,
-                    color: v.color, inStock: v.in_stock !== false
+                    stock: Math.max(0, Number(v.quantity ?? 0)),
+                    color: v.color, inStock: v.in_stock !== false && Number(v.quantity ?? 0) > 0
                 });
             }
         });
@@ -1208,8 +1421,8 @@ if (product.variants && product.variants.length > 0) {
     }
 }
 let discountPercentage = originalPrice > displayPrice ? Math.round(((originalPrice - displayPrice) / originalPrice) * 100) : 0;
-        const brand = product.brand || 'H&M';
-        const name = product.name || 'Maxi Dress';
+        const brand = product.brand || '';
+        const name = product.name || '';
         const rating = 4.5;
         const reviewCount = 33;
         let starsHtml = '';
@@ -1245,7 +1458,7 @@ let discountPercentage = originalPrice > displayPrice ? Math.round(((originalPri
                 <div class="pdp-gallery" onclick="nextImage()">
                     <img src="${currentImages[0]}" class="pdp-main-image" id="mainImage">
                     ${discountPercentage > 20 ? '<span class="pdp-best-seller">Best Seller</span>' : ''}
-                    <button class="pdp-wishlist ${wishlist.some(item => item.id == product.id) ? 'active' : ''}" onclick="toggleWishlist(this, event)"><svg class="wishlist-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
+                    <button class="pdp-wishlist" aria-label="Add to wishlist" aria-pressed="false" onclick="toggleWishlist(this, event)"><svg class="wishlist-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
                     <span class="pdp-image-counter" id="currentImage">1/${currentImages.length}</span>
                 </div>
                 <div class="pdp-right">
@@ -1291,6 +1504,7 @@ let discountPercentage = originalPrice > displayPrice ? Math.round(((originalPri
         `;
         
         container.innerHTML = html;
+        window.syncProductWishlistHeart?.();
         document.title = `${product.name} | MAHERA JEWEL`;
 
         let metaDesc = document.querySelector('meta[name="description"]');
@@ -1312,10 +1526,11 @@ let discountPercentage = originalPrice > displayPrice ? Math.round(((originalPri
         updateCartBadge();
         
         setTimeout(() => {
-            if (window.innerWidth >= 1024) {
-                const desktopDetails = document.getElementById('productDetailsDesktop');
-                const mobileDetails = document.querySelector('.pdp-bottom .pdp-details');
-                if (desktopDetails && mobileDetails) desktopDetails.innerHTML = mobileDetails.innerHTML;
+            const desktopDetails = document.getElementById('productDetailsDesktop');
+            const mobileDetails = document.querySelector('.pdp-bottom .pdp-details');
+
+            if (desktopDetails && mobileDetails) {
+                desktopDetails.innerHTML = mobileDetails.innerHTML;
             }
         }, 100);
         

@@ -211,10 +211,18 @@ body {
     color: #000 !important
 }
 
+.cart-page .site-header {
+    position: relative;
+    top: 0;
+    margin-top: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
 .site-header {
     position: sticky;
     background: var(--white);
-    padding: 12px 0
+    padding: 12px 0;
 }
 
 .mobile-search-figma {
@@ -5245,4 +5253,27 @@ body {
 .product-views i{
     color: #440C2C;
     font-size: 14px;
+}
+body.cart-page .site-header {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin-top: 0 !important;
+}
+body[data-page="landing"] .site-header {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+}
+/* Common header spacing across all pages */
+.site-header {
+    margin-top: 0;
+    padding-top: 0;
+}
+
+.web-header {
+    margin-top: 0;
+    padding-top: 0;
+}
+
+.web-header .top-bar {
+    margin-top: 0;
 }
