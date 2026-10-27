@@ -28,9 +28,10 @@ function showPopupMessage(containerId, message, type) {
         border-radius: 8px;
         margin-bottom: 20px;
         font-size: 14px;
-        background: ${type === 'error' ? '#fee2e2' : '#dcfce7'};
-        color: ${type === 'error' ? '#b91c1c' : '#166534'};
-        border: 1px solid ${type === 'error' ? '#fecaca' : '#bbf7d0'};
+        background: ${type === 'error' ? '#fee2e2' : '#dcfce7'} !important;
+        color: ${type === 'error' ? '#b91c1c' : '#166534'} !important;
+        border: 1px solid ${type === 'error' ? '#fecaca' : '#bbf7d0'} !important;
+
     `;
     container.innerHTML = '';
     container.appendChild(msgDiv);
@@ -230,7 +231,16 @@ function showResetPasswordPopup(email, otp) {
             } else {
                 showPopupMessage('reset-msg-container', data.message || 'Failed to reset password', 'error');
             }
-        } catch(err) { showPopupMessage('reset-msg-container', 'Server error', 'error'); }
+        
+            } catch (err) {
+                console.error('Reset password request failed:', err);
+                showPopupMessage(
+                    'reset-msg-container',
+                    'Unable to reset your password right now. Please try again.',
+                    'error'
+                );
+            }
+
     });
 }
 
@@ -311,13 +321,25 @@ function showLoginPopup() {
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({email, password})
             });
-            const data = await res.json();
-            if(res.ok && data.token) {
-    localStorage.setItem("token", data.token);
-    if(data.user) localStorage.setItem("user", JSON.stringify(data.user));
-    showPopupMessage('login-msg-container', 'Login Successful!', 'success');
-    
-    // 👇 YE CHECK KARO - Agar redirect saved hai toh wahan jao
+            
+    const response = await res.json();
+
+    if (res.ok && response.success && response.data?.token) {
+        const token = response.data.token;
+        const user = response.data.user;
+
+        localStorage.setItem("token", token);
+
+        if (user) {
+            localStorage.setItem("user", JSON.stringify(user));
+        }
+
+        showPopupMessage(
+            'login-msg-container',
+            response.message || 'Login successful!',
+            'success'
+        );
+
     const savedRedirect = sessionStorage.getItem('redirect_after_login');
     
     setTimeout(() => {
@@ -331,16 +353,33 @@ function showLoginPopup() {
         }
     }, 1500);
 }
-             else {
-                if(data.message && data.message.toLowerCase().includes("verify")) {
+             
+            else {
+                const message = response.message || 'Login failed';
+
+                if (message.toLowerCase().includes("verify")) {
                     localStorage.setItem("verify_email", email);
-                    document.getElementById('auth-popup').remove();
+                    document.getElementById('auth-popup')?.remove();
                     showVerifyPopup(email, false);
                 } else {
-                    showPopupMessage('login-msg-container', data.message || 'Login failed', 'error');
+                    showPopupMessage(
+                        'login-msg-container',
+                        message,
+                        'error'
+                    );
                 }
             }
-        } catch(err) { showPopupMessage('login-msg-container', 'Server error', 'error'); }
+
+        
+            } catch (err) {
+                console.error('Login request failed:', err);
+                showPopupMessage(
+                    'login-msg-container',
+                    'Unable to log in right now. Please try again.',
+                    'error'
+                );
+            }
+
     });
 }
 

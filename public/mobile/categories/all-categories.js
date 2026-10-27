@@ -458,7 +458,7 @@ if (categorySlug === "bestsellers") {
 
                             \</a>
 
-                            \<a href="/wishlist" class="action-link">
+                            \<a href="javascript:void(0)" class="action-link" onclick="if (!localStorage.getItem('token')) { showLoginPopup(); } else { window.location.href='/wishlist'; }">
 
                                 \<svg class="header-icon" viewBox="0 0 24 24" fill="none">
 
@@ -556,7 +556,7 @@ if (categorySlug === "bestsellers") {
 
                         \<div class="header-icons">
 
-                            \<button class="header-icon-btn" onclick="window.location.href='/wishlist'" aria-label="Wishlist">
+                            \<button class="header-icon-btn" onclick="if (!localStorage.getItem('token')) { showLoginPopup(); } else { window.location.href='/wishlist'; }" aria-label="Wishlist">
 
                                 \<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#333333" stroke-width="2" aria-hidden="true">
 

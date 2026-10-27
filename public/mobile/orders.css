@@ -824,7 +824,8 @@ html {
 }
 
 body.orders-page .site-header {
-    padding-top: calc(12px + env(safe-area-inset-top));
+    padding-top: 0;
+    margin-top: 0;
 }
 
 .orders-list {

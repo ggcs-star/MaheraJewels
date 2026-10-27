@@ -10,6 +10,50 @@ function saveCart(cart) {
     updateCartCountBadge();
 }
 
+
+// ========== VARIANT STOCK HELPERS ========== 
+// Stock must come from the selected variant's `quantity`, not product-level `stock`
+// because a product can have different stock for each color/size.
+function getSelectedCartVariant(item) {
+    const variants = Array.isArray(item?.availableVariants) ? item.availableVariants :
+        (Array.isArray(item?.variants) ? item.variants : []);
+    if (!variants.length) return null;
+
+    const selectedValue = String(item.variantValue ?? item.size ?? item.variant_value ?? '').trim().toLowerCase();
+    const selectedId = item.variantId ?? item.variant_id ?? item.product_variant_id ?? item.variant?.id ?? null;
+
+    if (selectedId !== null && selectedId !== undefined && selectedId !== '') {
+        const byId = variants.find(v => String(v.id ?? v.variant_id ?? v.variantId ?? '') === String(selectedId));
+        if (byId) return byId;
+    }
+
+    if (selectedValue) {
+        const byValue = variants.find(v => String(v.value ?? v.variant_value ?? v.name ?? '').trim().toLowerCase() === selectedValue);
+        if (byValue) return byValue;
+    }
+
+    return null;
+}
+
+function getAvailableStock(item) {
+    const variant = getSelectedCartVariant(item);
+    const rawStock = variant ? (variant.quantity ?? variant.stock ?? variant.available_stock) : (item?.quantity_available ?? item?.available_stock ?? item?.stock);
+    if (rawStock === null || rawStock === undefined || rawStock === '') return null;
+    const stock = Number(rawStock);
+    return Number.isFinite(stock) ? Math.max(0, Math.floor(stock)) : null;
+}
+
+function validateCartQuantity(item, requestedQty, options = {}) {
+    const qty = Math.max(1, Math.floor(Number(requestedQty) || 1));
+    const stock = getAvailableStock(item);
+
+    // If the cart payload doesn't contain stock, do not invent a limit; checkout/server must validate it.
+    if (stock === null) return { valid: true, quantity: qty, stock: null };
+    if (stock <= 0) return { valid: false, quantity: 1, stock, message: 'This variant is out of stock' };
+    if (qty > stock) return { valid: false, quantity: stock, stock, message: `Only ${stock} item${stock === 1 ? '' : 's'} available in stock` };
+    return { valid: true, quantity: qty, stock };
+}
+
 function updateCartCountBadge() {
     let cart = getCart();
     const totalItems = cart.length;
@@ -147,8 +191,8 @@ function getCartItemHTML(item, index, qty, price, itemTotal, isWeb) {
             <div class="selector-wrapper">
                 <div class="qty-control">
                     <button class="qty-btn" onclick="updateWebQty(${index}, -1)">−</button>
-                    <input type="number" class="qty-input" id="qty-input-${index}" value="${qty}" min="1" max="99" onchange="updateWebQtyFromInput(${index})">
-                    <button class="qty-btn" onclick="updateWebQty(${index}, 1)">+</button>
+                    <input type="number" class="qty-input" id="qty-input-${index}" value="${qty}" min="1" max="${getAvailableStock(item) === null ? 99 : Math.max(1, getAvailableStock(item))}" onchange="updateWebQtyFromInput(${index})">
+                    <button class="qty-btn" onclick="updateWebQty(${index}, 1)" ${getAvailableStock(item) !== null && qty >= getAvailableStock(item) ? 'disabled' : ''}>+</button>
                 </div>
             </div>
         `;
@@ -337,32 +381,57 @@ function moveToWishlist(index) {
 function updateWebQty(index, delta) {
     const input = document.getElementById(`qty-input-${index}`);
     if (!input) return;
-    
-    let currentQty = parseInt(input.value) || 1;
-    let newQty = Math.min(99, Math.max(1, currentQty + delta));
-    input.value = newQty;
-    
-    let cart = getCart();
-    if (cart[index]) {
-        cart[index].quantity = newQty;
-        saveCart(cart);
-        updatePriceDetails(cart);
+
+    const cart = getCart();
+    if (!cart[index]) return;
+
+    const currentQty = Math.max(1, parseInt(input.value, 10) || 1);
+    const requestedQty = Math.min(99, Math.max(1, currentQty + delta));
+    const validation = validateCartQuantity(cart[index], requestedQty);
+
+    if (!validation.valid) {
+        showToast(validation.message, 'error');
+        if (validation.stock > 0) input.value = validation.stock;
+        return;
     }
+
+    cart[index].quantity = validation.quantity;
+    input.value = validation.quantity;
+    saveCart(cart);
+    updatePriceDetails(cart);
+
+    // Keep the + button in sync with current variant stock without changing layout.
+    const plusButton = input.parentElement?.querySelector('.qty-btn:last-child');
+    if (plusButton && validation.stock !== null) plusButton.disabled = validation.quantity >= validation.stock;
 }
 
 function updateWebQtyFromInput(index) {
     const input = document.getElementById(`qty-input-${index}`);
     if (!input) return;
-    
-    let newQty = Math.min(99, Math.max(1, parseInt(input.value) || 1));
-    input.value = newQty;
-    
-    let cart = getCart();
-    if (cart[index]) {
-        cart[index].quantity = newQty;
-        saveCart(cart);
-        updatePriceDetails(cart);
+
+    const cart = getCart();
+    if (!cart[index]) return;
+
+    const requestedQty = Math.min(99, Math.max(1, parseInt(input.value, 10) || 1));
+    const validation = validateCartQuantity(cart[index], requestedQty);
+
+    if (!validation.valid) {
+        showToast(validation.message, 'error');
+        input.value = validation.stock > 0 ? validation.stock : 1;
+        if (validation.stock > 0) {
+            cart[index].quantity = validation.stock;
+            saveCart(cart);
+            updatePriceDetails(cart);
+        }
+        return;
     }
+
+    cart[index].quantity = validation.quantity;
+    input.value = validation.quantity;
+    saveCart(cart);
+    updatePriceDetails(cart);
+    const plusButton = input.parentElement?.querySelector('.qty-btn:last-child');
+    if (plusButton && validation.stock !== null) plusButton.disabled = validation.quantity >= validation.stock;
 }
 
 function toggleVariantDropdown(index) {
@@ -468,7 +537,7 @@ function openQtyPopup(index, currentQty) {
                     <div class="popup-qty-controls">
                         <button class="popup-qty-btn" onclick="updateTempQty(${index}, -1)" ${currentQty <= 1 ? 'disabled' : ''}>−</button>
                         <input type="number" class="popup-qty-input" id="popup-qty-input-${index}" value="${currentQty}" min="1" max="99" onchange="updateTempQtyFromInput(${index})">
-                        <button class="popup-qty-btn" onclick="updateTempQty(${index}, 1)">+</button>
+                        <button class="popup-qty-btn" onclick="updateTempQty(${index}, 1)" ${getAvailableStock(cart[index]) !== null && currentQty >= getAvailableStock(cart[index]) ? 'disabled' : ''}>+</button>
                     </div>
                     <div class="popup-buttons">
                         <button class="popup-cancel-btn" onclick="closeQtyPopup()">CANCEL</button>
@@ -488,33 +557,74 @@ function openQtyPopup(index, currentQty) {
 function updateTempQty(index, delta) {
     const input = document.getElementById(`popup-qty-input-${index}`);
     if (!input) return;
-    let newQty = Math.min(99, Math.max(1, (parseInt(input.value) || 1) + delta));
-    input.value = newQty;
+    const cart = getCart();
+    if (!cart[index]) return;
+
+    const currentQty = Math.max(1, parseInt(input.value, 10) || 1);
+    const requestedQty = Math.min(99, Math.max(1, currentQty + delta));
+    const validation = validateCartQuantity(cart[index], requestedQty);
     const popup = document.querySelector('.popup-overlay');
-    if (popup) popup.dataset.tempQty = newQty;
+
+    if (!validation.valid) {
+        showToast(validation.message, 'error');
+        if (validation.stock > 0) {
+            input.value = validation.stock;
+            if (popup) popup.dataset.tempQty = validation.stock;
+        }
+    } else {
+        input.value = validation.quantity;
+        if (popup) popup.dataset.tempQty = validation.quantity;
+    }
+
+    const plusButton = input.parentElement?.querySelector('.popup-qty-btn:last-child');
+    const selectedQty = parseInt(input.value, 10) || 1;
+    if (plusButton && validation.stock !== null) plusButton.disabled = selectedQty >= validation.stock;
 }
 
 function updateTempQtyFromInput(index) {
     const input = document.getElementById(`popup-qty-input-${index}`);
     if (!input) return;
-    let newQty = Math.min(99, Math.max(1, parseInt(input.value) || 1));
-    input.value = newQty;
+    const cart = getCart();
+    if (!cart[index]) return;
+
+    const requestedQty = Math.min(99, Math.max(1, parseInt(input.value, 10) || 1));
+    const validation = validateCartQuantity(cart[index], requestedQty);
     const popup = document.querySelector('.popup-overlay');
-    if (popup) popup.dataset.tempQty = newQty;
+
+    if (!validation.valid) {
+        showToast(validation.message, 'error');
+        input.value = validation.stock > 0 ? validation.stock : 1;
+    } else {
+        input.value = validation.quantity;
+    }
+
+    if (popup) popup.dataset.tempQty = input.value;
+    const plusButton = input.parentElement?.querySelector('.popup-qty-btn:last-child');
+    if (plusButton && validation.stock !== null) plusButton.disabled = Number(input.value) >= validation.stock;
 }
 
 function applyQtyChange(index) {
     const popup = document.querySelector('.popup-overlay');
-    const newQty = popup ? parseInt(popup.dataset.tempQty) : null;
-    if (newQty && newQty > 0) {
-        let cart = getCart();
-        if (cart[index]) {
-            cart[index].quantity = newQty;
-            saveCart(cart);
-            loadCart();
-        }
+    const input = document.getElementById(`popup-qty-input-${index}`);
+    const requestedQty = parseInt(input?.value ?? popup?.dataset.tempQty, 10);
+    const cart = getCart();
+
+    if (!cart[index]) {
+        closeQtyPopup();
+        return;
     }
+
+    const validation = validateCartQuantity(cart[index], requestedQty);
+    if (!validation.valid) {
+        showToast(validation.message, 'error');
+        if (validation.stock > 0 && input) input.value = validation.stock;
+        return; // Keep popup open so the customer can see/fix the quantity.
+    }
+
+    cart[index].quantity = validation.quantity;
+    saveCart(cart);
     closeQtyPopup();
+    loadCart();
 }
 
 function closeQtyPopup() {
@@ -900,3 +1010,26 @@ document.addEventListener('click', function(e) {
         document.querySelectorAll('.selector-trigger').forEach(t => t.classList.remove('open'));
     }
 });
+
+// Re-render cart controls only when switching between desktop and mobile layouts.
+// This keeps the existing markup/styles intact while preventing stale selectors after DevTools resize.
+(function bindCartResponsiveRefresh() {
+    let wasWebLayout = window.innerWidth >= 1025;
+    let resizeFrame = null;
+
+    window.addEventListener('resize', function () {
+        if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+
+        resizeFrame = window.requestAnimationFrame(function () {
+            resizeFrame = null;
+            const isWebLayout = window.innerWidth >= 1025;
+
+            if (isWebLayout === wasWebLayout) return;
+            wasWebLayout = isWebLayout;
+
+            if (document.getElementById('cart-items')) {
+                loadCart();
+            }
+        });
+    }, { passive: true });
+})();

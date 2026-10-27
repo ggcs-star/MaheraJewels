@@ -61,7 +61,8 @@
     </a>
 
     <!-- Wishlist -->
-    <a href="/wishlist" class="action-link">
+    <a href="javascript:void(0)" class="action-link"
+   onclick="if (!localStorage.getItem('token')) { showLoginPopup(); } else { window.location.href='/wishlist'; }">
 
         <svg class="header-icon"
              viewBox="0 0 24 24"

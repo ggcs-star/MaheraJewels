@@ -1942,6 +1942,15 @@ body.product-detail-page .pdp-main {
 }
 @media (max-width: 1023px) {
     .pdp-details-desktop {
+        display: block !important;
+        background: #fff;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        padding: 16px;
+        margin-top: 10px;
+    }
+
+    .pdp-bottom .pdp-details {
         display: none !important;
     }
 }
